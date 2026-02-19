@@ -1,0 +1,5 @@
+# Place your SSL certificates here:
+#   fullchain.pem  — Your full certificate chain
+#   privkey.pem    — Your private key
+#
+# You can use Let's Encrypt / Certbot to obtain free certificates.

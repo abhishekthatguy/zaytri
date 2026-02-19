@@ -1,0 +1,55 @@
+# ─── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Git ─────────────────────────────────────────────────────────────────────
+.git
+.gitignore
+.github
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+venv
+.venv
+
+# ─── Frontend (built separately) ────────────────────────────────────────────
+frontend/node_modules
+frontend/.next
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules
+.next
+
+# ─── Documentation (not needed in image) ────────────────────────────────────
+docs/
+*.md
+!requirements.txt
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.vscode
+.idea
+.DS_Store
+
+# ─── Tests (not needed in prod image) ───────────────────────────────────────
+tests/
+
+# ─── Nginx (mounted as volume, not baked into app image) ────────────────────
+nginx/
+
+# ─── Docker files (not needed inside images) ────────────────────────────────
+docker-compose*.yml
+Dockerfile
+
+# ─── Celery local files ─────────────────────────────────────────────────────
+celerybeat-schedule*
+
+# ─── Misc ────────────────────────────────────────────────────────────────────
+*.log
+*.bak
+*.tmp

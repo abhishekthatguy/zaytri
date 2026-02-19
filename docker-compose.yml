@@ -1,0 +1,149 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# All ports are read from .env:
+#   BACKEND_PORT, FRONTEND_PORT, REDIS_PORT, POSTGRES_PORT, OLLAMA_PORT
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─── PostgreSQL ──────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: zaytri-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zaytri_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_secure_password_here}
+      POSTGRES_DB: ${POSTGRES_DB:-zaytri_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zaytri_user}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: zaytri-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Ollama (Local LLM) ─────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: zaytri-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment for GPU support on Linux:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+    # ─── FastAPI Backend ─────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BACKEND_PORT: ${BACKEND_PORT:-8000}
+    container_name: zaytri-app
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}"
+    environment:
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
+      - FRONTEND_PORT=${FRONTEND_PORT:-3000}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-zaytri_user}:${POSTGRES_PASSWORD:-your_secure_password_here}@postgres:5432/${POSTGRES_DB:-zaytri_db}
+      - DATABASE_URL_SYNC=postgresql://${POSTGRES_USER:-zaytri_user}:${POSTGRES_PASSWORD:-your_secure_password_here}@postgres:5432/${POSTGRES_DB:-zaytri_db}
+      - OLLAMA_HOST=http://ollama:11434
+      - CORS_ORIGINS=http://localhost:${FRONTEND_PORT:-3000},http://frontend:${FRONTEND_PORT:-3000}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    command: uvicorn main:app --host 0.0.0.0 --port ${BACKEND_PORT:-8000} --reload
+
+  # ─── Celery Worker ──────────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zaytri-celery-worker
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-zaytri_user}:${POSTGRES_PASSWORD:-your_secure_password_here}@postgres:5432/${POSTGRES_DB:-zaytri_db}
+      - DATABASE_URL_SYNC=postgresql://${POSTGRES_USER:-zaytri_user}:${POSTGRES_PASSWORD:-your_secure_password_here}@postgres:5432/${POSTGRES_DB:-zaytri_db}
+      - OLLAMA_HOST=http://ollama:11434
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A celery_app worker --loglevel=info --concurrency=4 -Q pipeline,scheduler,publisher,engagement,analytics
+
+  # ─── Celery Beat (Cron Scheduler) ───────────────────────────────────
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zaytri-celery-beat
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A celery_app beat --loglevel=info
+
+  # ─── Next.js Frontend ───────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://app:${BACKEND_PORT:-8000}
+        FRONTEND_PORT: ${FRONTEND_PORT:-3000}
+    container_name: zaytri-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_PORT:-3000}"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://app:${BACKEND_PORT:-8000}
+      - PORT=${FRONTEND_PORT:-3000}
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:

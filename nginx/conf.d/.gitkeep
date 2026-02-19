@@ -1,0 +1,3 @@
+# This directory is for additional nginx configuration snippets.
+# Files placed here with .conf extension will be included by nginx.
+# The main configuration is in ../nginx.conf

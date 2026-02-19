@@ -1,0 +1,174 @@
+"""
+Zaytri — LLM Router
+Routes agent LLM requests to the correct provider based on per-agent configuration.
+Falls back to default Ollama if no override is set.
+"""
+
+import logging
+from typing import Optional, Dict
+from brain.providers import BaseLLMProvider
+from brain.providers.ollama_provider import OllamaProvider
+from brain.providers.openai_provider import OpenAIProvider
+from brain.providers.gemini_provider import GeminiProvider
+from brain.providers.anthropic_provider import AnthropicProvider
+from brain.providers.groq_provider import GroqProvider
+
+logger = logging.getLogger(__name__)
+
+# ─── Agent identifiers ─────────────────────────────────────────────────────
+AGENT_IDS = [
+    "content_creator",
+    "hashtag_generator",
+    "review_agent",
+    "engagement_bot",
+    "analytics_agent",
+    "master_agent",
+]
+
+# ─── Provider registry ─────────────────────────────────────────────────────
+PROVIDER_MODELS: Dict[str, list] = {
+    "ollama": ["llama3", "llama3.1", "llama3.2", "mistral", "gemma2", "phi3", "codellama", "deepseek-r1"],
+    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o1-mini"],
+    "gemini": ["gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
+    "anthropic": ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-3-20240307"],
+    "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+}
+
+
+def create_provider(
+    provider_name: str,
+    model: str,
+    api_key: Optional[str] = None,
+    ollama_host: Optional[str] = None,
+) -> BaseLLMProvider:
+    """Factory: create a provider instance by name."""
+    if provider_name == "ollama":
+        from config import settings
+        host = ollama_host or settings.ollama_host
+        return OllamaProvider(host=host, model=model)
+    elif provider_name == "openai":
+        if not api_key:
+            raise ValueError("OpenAI API key is required")
+        return OpenAIProvider(api_key=api_key, model=model)
+    elif provider_name == "gemini":
+        if not api_key:
+            raise ValueError("Gemini API key is required")
+        return GeminiProvider(api_key=api_key, model=model)
+    elif provider_name == "anthropic":
+        if not api_key:
+            raise ValueError("Anthropic API key is required")
+        return AnthropicProvider(api_key=api_key, model=model)
+    elif provider_name == "groq":
+        if not api_key:
+            raise ValueError("Groq API key is required")
+        return GroqProvider(api_key=api_key, model=model)
+    else:
+        raise ValueError(f"Unknown provider: {provider_name}")
+
+
+class LLMRouter:
+    """
+    Routes LLM requests to the correct provider based on agent configuration.
+
+    Usage:
+        router = LLMRouter()
+        llm = router.get_provider("content_creator")
+        result = await llm.generate_json(...)
+    """
+
+    def __init__(self):
+        self._cache: Dict[str, BaseLLMProvider] = {}
+
+    def get_default_provider(self) -> BaseLLMProvider:
+        """Get the default Ollama provider."""
+        if "_default" not in self._cache:
+            from config import settings
+            self._cache["_default"] = OllamaProvider(
+                host=settings.ollama_host,
+                model=settings.ollama_model,
+            )
+        return self._cache["_default"]
+
+    def get_provider(self, agent_id: str) -> BaseLLMProvider:
+        """
+        Get the LLM provider for a specific agent.
+        Returns the configured override, or falls back to default Ollama.
+        """
+        if agent_id in self._cache:
+            return self._cache[agent_id]
+
+        # Try to load from database config
+        try:
+            provider = self._load_agent_config(agent_id)
+            if provider:
+                self._cache[agent_id] = provider
+                return provider
+        except Exception as e:
+            logger.warning(f"Failed to load LLM config for {agent_id}, using default: {e}")
+
+        return self.get_default_provider()
+
+    def _load_agent_config(self, agent_id: str) -> Optional[BaseLLMProvider]:
+        """Load agent-specific LLM config from DB (sync)."""
+        try:
+            from sqlalchemy import create_engine, select
+            from sqlalchemy.orm import Session
+            from config import settings
+            from db.settings_models import AgentModelConfig, LLMProviderConfig
+            from utils.crypto import decrypt_value
+
+            sync_url = settings.database_url.replace("+asyncpg", "").replace("postgresql://", "postgresql://")
+            engine = create_engine(sync_url)
+
+            with Session(engine) as session:
+                # Get agent config
+                agent_cfg = session.execute(
+                    select(AgentModelConfig).where(AgentModelConfig.agent_id == agent_id)
+                ).scalar_one_or_none()
+
+                if not agent_cfg or not agent_cfg.is_custom:
+                    return None
+
+                provider_name = agent_cfg.provider
+                model = agent_cfg.model
+
+                if provider_name == "ollama":
+                    return OllamaProvider(
+                        host=settings.ollama_host,
+                        model=model,
+                    )
+
+                # Get provider API key
+                provider_cfg = session.execute(
+                    select(LLMProviderConfig).where(
+                        LLMProviderConfig.provider == provider_name
+                    )
+                ).scalar_one_or_none()
+
+                if not provider_cfg or not provider_cfg.api_key_encrypted:
+                    logger.warning(f"No API key for provider {provider_name}")
+                    return None
+
+                api_key = decrypt_value(provider_cfg.api_key_encrypted)
+                return create_provider(provider_name, model, api_key=api_key)
+
+            engine.dispose()
+        except Exception as e:
+            logger.debug(f"Could not load agent config from DB: {e}")
+            return None
+
+    def invalidate_cache(self, agent_id: Optional[str] = None):
+        """Clear cached providers. Called when settings change."""
+        if agent_id:
+            self._cache.pop(agent_id, None)
+        else:
+            self._cache.clear()
+
+
+# ─── Singleton ──────────────────────────────────────────────────────────────
+llm_router = LLMRouter()
+
+
+def get_llm(agent_id: str) -> BaseLLMProvider:
+    """Convenience function to get the LLM provider for an agent."""
+    return llm_router.get_provider(agent_id)

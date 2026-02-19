@@ -1,0 +1,12 @@
+{
+  "name": "zaytri-badges",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "dependencies": {
+    "badge-maker": "^4.0.0"
+  }
+}
+
