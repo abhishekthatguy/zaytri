@@ -23,14 +23,19 @@ from config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _truncate_for_bcrypt(password: str) -> str:
+    """Truncate password to 72 bytes (bcrypt limit). Newer bcrypt versions raise errors instead of silently truncating."""
+    return password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+
+
 def hash_password(password: str) -> str:
     """Hash password with bcrypt. Result is irreversible — no one can see the original."""
-    return pwd_context.hash(password)
+    return pwd_context.hash(_truncate_for_bcrypt(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plain password against bcrypt hash."""
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_truncate_for_bcrypt(plain), hashed)
 
 
 # ─── JWT Tokens ──────────────────────────────────────────────────────────────

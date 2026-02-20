@@ -35,6 +35,7 @@ docs/
 .vscode
 .idea
 .DS_Store
+._*
 
 # ─── Tests (not needed in prod image) ───────────────────────────────────────
 tests/

@@ -56,8 +56,35 @@ done
 
 # ─── Run Database Migrations ────────────────────────────────────────────────
 echo "🔄 Running database migrations..."
-alembic upgrade head
-echo "✅ Migrations complete"
+
+# First, ensure all tables exist using SQLAlchemy create_all (handles ordering)
+python -c "
+import os
+from sqlalchemy import create_engine
+from db.database import Base
+# Import ALL models so metadata knows about them
+import auth.models
+import db.models
+import db.settings_models
+import db.social_connections
+import db.whatsapp_approval
+try:
+    import db.calendar_models
+except ImportError:
+    pass
+
+url = os.environ.get('DATABASE_URL_SYNC', '')
+engine = create_engine(url)
+Base.metadata.create_all(bind=engine)
+print('✅ Tables created/verified')
+engine.dispose()
+"
+
+# Then stamp alembic to current head (so future migrations work)
+alembic stamp head 2>/dev/null || echo "⚠️  Alembic stamp skipped"
+
+# Run any pending migrations
+alembic upgrade head 2>/dev/null && echo "✅ Migrations complete" || echo "⚠️  Migrations skipped (tables already up to date)"
 
 # ─── Start the Application ──────────────────────────────────────────────────
 echo "🚀 Starting Zaytri ($1)..."

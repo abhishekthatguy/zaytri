@@ -360,6 +360,30 @@ cmd_docker() {
     esac
 }
 
+# ─── Production Deployment sub-commands ──────────────────────────────────────
+
+cmd_deploy() {
+    ensure_home
+    local DEPLOY_SCRIPT="$ZAYTRI_HOME/scripts/deploy-prod.sh"
+    
+    if [ ! -f "$DEPLOY_SCRIPT" ]; then
+        log_err "Deployment script not found at $DEPLOY_SCRIPT"
+        exit 1
+    fi
+
+    local action="$1"
+    shift 2>/dev/null || true
+    
+    # If no action provided, show deployment help
+    if [ -z "$action" ]; then
+        bash "$DEPLOY_SCRIPT" help
+        return
+    fi
+
+    # Dispatch to the production deployment script
+    bash "$DEPLOY_SCRIPT" "$action" "$@"
+}
+
 # ─── Help ────────────────────────────────────────────────────────────────────
 
 cmd_help() {
@@ -385,6 +409,13 @@ cmd_help() {
     echo "  docker build        Build Docker images"
     echo "  docker restart      Rebuild + restart containers"
     echo "  docker ps           Show container status"
+    echo ""
+    echo -e "${BOLD}Production (GCE):${NC}"
+    echo "  deploy              Full deploy to Google Cloud (Mac -> VM)"
+    echo "  remote-status       Check status of containers on VM"
+    echo "  remote-logs [app]   View logs from the VM"
+    echo "  ssl                 Obtain/renew SSL certificate on VM"
+    echo "  vm-ssh              SSH into the production VM"
     echo ""
     echo -e "${BOLD}Utilities:${NC}"
     echo "  chat <message>      Send a message to the Master Agent"
@@ -427,6 +458,9 @@ case "$COMMAND" in
     update)       cmd_update "$@" ;;
     uninstall)    cmd_uninstall "$@" ;;
     docker)       cmd_docker "$@" ;;
+    deploy|remote-status|remote-logs|remote-restart|remote-up|remote-down|ssl|vm-ssh)
+        cmd_deploy "$COMMAND" "$@"
+        ;;
     help|--help|-h) cmd_help ;;
     version|--version|-v) cmd_version ;;
     *)
