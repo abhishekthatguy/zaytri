@@ -39,9 +39,14 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2:latest"
 
     # ── JWT Authentication ──────────────────────────────────────────────
-    jwt_secret_key: str = "change-this-in-production"
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440  # 24 hours
+
+    # ── Default Admin ────────────────────────────────────────────────────
+    default_admin_email: str
+    default_admin_username: str
+    default_admin_password: str
 
     # ── OAuth — User Login (Google, Facebook, GitHub, Twitter) ──────────
     oauth_google_client_id: str = ""
@@ -67,7 +72,7 @@ class Settings(BaseSettings):
     # ── WhatsApp Business API (for content approval flow) ────────────────
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
-    whatsapp_verify_token: str = "zaytri-whatsapp-verify"
+    whatsapp_verify_token: str = ""
     whatsapp_approval_phone: str = ""  # Phone number to send approval messages to
 
     # ── Legacy Platform Credentials (deprecated — use OAuth Connect) ────
