@@ -77,13 +77,18 @@ START_TIME=$(date +%s)
 # PHASE 1: Tests
 # ═════════════════════════════════════════════════════════════════════════════
 
+PYTHON_BIN="python3"
+if [ -d "$PROJECT_ROOT/.venv" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+fi
+
 run_tests() {
     echo -e "${BOLD}━━━ Phase 1: Running Tests ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
     # ── 1a. Python import check ──────────────────────────────────────────
     log_info "Checking Python imports..."
-    python3 -c "
+    $PYTHON_BIN -c "
 from config import settings
 from main import app
 from agents.master_agent import MasterAgent, ActionExecutor
@@ -101,8 +106,8 @@ print('All imports OK')
 
     # ── 1b. Python unit tests (pytest) ───────────────────────────────────
     log_info "Running Python tests..."
-    if python3 -m pytest --version &>/dev/null; then
-        python3 -m pytest tests/ -v --tb=short --no-header -q 2>&1
+    if $PYTHON_BIN -m pytest --version &>/dev/null; then
+        $PYTHON_BIN -m pytest tests/ -v --tb=short --no-header -q 2>&1
         if [ $? -ne 0 ]; then
             log_error "❌ Python tests FAILED"
             return 1
@@ -167,7 +172,7 @@ build_backend() {
 
     # ── Check all dependencies ───────────────────────────────────────────
     log_info "Checking Python dependencies..."
-    python3 -c "import fastapi, uvicorn, sqlalchemy, celery, httpx, cryptography; print('All deps OK')" 2>&1
+    $PYTHON_BIN -c "import fastapi, uvicorn, sqlalchemy, celery, httpx, cryptography; print('All deps OK')" 2>&1
     if [ $? -ne 0 ]; then
         log_error "❌ Missing Python dependencies. Run: pip3 install -r requirements.txt"
         return 1
@@ -176,7 +181,7 @@ build_backend() {
 
     # ── Validate app loads ───────────────────────────────────────────────
     log_info "Validating FastAPI app..."
-    ROUTE_COUNT=$(python3 -c "from main import app; print(len(app.routes))" 2>&1)
+    ROUTE_COUNT=$($PYTHON_BIN -c "from main import app; print(len(app.routes))" 2>&1)
     if [ $? -ne 0 ]; then
         log_error "❌ FastAPI app failed to load"
         echo "$ROUTE_COUNT"
@@ -186,7 +191,7 @@ build_backend() {
 
     # ── Validate config ──────────────────────────────────────────────────
     log_info "Validating config..."
-    python3 -c "
+    $PYTHON_BIN -c "
 from config import settings
 assert settings.backend_port > 0, 'Invalid backend port'
 assert settings.frontend_port > 0, 'Invalid frontend port'

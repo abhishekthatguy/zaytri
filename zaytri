@@ -83,6 +83,14 @@ load_env() {
     OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 }
 
+resolve_python() {
+    if [ -d "$ZAYTRI_HOME/.venv" ]; then
+        PYTHON="$ZAYTRI_HOME/.venv/bin/python3"
+    else
+        PYTHON="python3"
+    fi
+}
+
 ensure_home() {
     if [ ! -f "$ZAYTRI_HOME/main.py" ]; then
         log_err "Zaytri not found at $ZAYTRI_HOME"
@@ -175,6 +183,13 @@ cmd_status() {
     fi
 
     echo ""
+    if [ -d "$ZAYTRI_HOME/.venv" ]; then
+        log_ok "  Environment: 📦 .venv (Local)"
+    else
+        log_warn "  Environment: 🌐 System (Global)"
+    fi
+
+    echo ""
     echo -e "${BOLD}Endpoints${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  🌐 App:      http://localhost:${FRONTEND_PORT}"
@@ -235,13 +250,14 @@ cmd_chat() {
 
     local api_url="http://localhost:${BACKEND_PORT}"
     local response
+    resolve_python
     response=$(curl -sf -X POST "${api_url}/chat" \
         -H "Content-Type: application/json" \
         -d "{\"message\": \"${message}\", \"conversation_id\": \"cli-$(date +%s)\"}" 2>&1)
 
     if [ $? -eq 0 ]; then
         # Extract response field from JSON
-        echo "$response" | python3 -c "
+        echo "$response" | $PYTHON -c "
 import sys, json
 data = json.load(sys.stdin)
 print(data.get('response', data))
@@ -268,13 +284,19 @@ cmd_update() {
     log "Updating Zaytri..."
     cd "$ZAYTRI_HOME"
 
+    resolve_python
     git pull origin main 2>/dev/null || git pull 2>/dev/null
     log_ok "  ✓ Code updated"
 
     if [ -f requirements.txt ]; then
-        pip3 install -r requirements.txt --quiet 2>/dev/null || \
-            python3 -m pip install -r requirements.txt --quiet 2>/dev/null
-        log_ok "  ✓ Python deps updated"
+        if [ -d "$ZAYTRI_HOME/.venv" ]; then
+            "$ZAYTRI_HOME/.venv/bin/pip" install -r requirements.txt --quiet
+            log_ok "  ✓ Python deps updated in .venv"
+        else
+            pip3 install -r requirements.txt --quiet 2>/dev/null || \
+                python3 -m pip install -r requirements.txt --quiet 2>/dev/null
+            log_ok "  ✓ Python deps updated (system)"
+        fi
     fi
 
     if [ -d frontend ]; then

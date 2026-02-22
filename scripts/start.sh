@@ -110,19 +110,26 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM
 
+# ─── Resolve Python Binary ──────────────────────────────────────────────────
+PYTHON_BIN="python3"
+if [ -d "$PROJECT_ROOT/.venv" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+    log_info "Using virtual environment: ${BOLD}.venv${NC}"
+fi
+
 # ─── Start Backend (FastAPI) ─────────────────────────────────────────────────
 log_info "Starting FastAPI backend on :${BACKEND_PORT}..."
-python3 -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" --reload &
+$PYTHON_BIN -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" --reload &
 BACKEND_PID=$!
 
 # ─── Start Celery Worker ─────────────────────────────────────────────────────
 log_info "Starting Celery worker..."
-python3 -m celery -A celery_app worker --loglevel=info --concurrency=2 -Q pipeline,scheduler,publisher,engagement,analytics &
+$PYTHON_BIN -m celery -A celery_app worker --loglevel=info --concurrency=2 -Q pipeline,scheduler,publisher,engagement,analytics &
 CELERY_PID=$!
 
 # ─── Start Celery Beat ───────────────────────────────────────────────────────
 log_info "Starting Celery Beat..."
-python3 -m celery -A celery_app beat --loglevel=info &
+$PYTHON_BIN -m celery -A celery_app beat --loglevel=info &
 BEAT_PID=$!
 
 # ─── Start Frontend (Next.js) ────────────────────────────────────────────────

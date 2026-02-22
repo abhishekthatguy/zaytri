@@ -368,11 +368,19 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 
 if [ "$MODE" = "local" ]; then
-    # Python dependencies
+    # Python virtual environment
+    log "Setting up Python virtual environment (.venv)..."
+    if [ ! -d ".venv" ]; then
+        python3 -m venv .venv || { log_err "Failed to create virtual environment. Ensure 'python3-venv' is installed."; exit 1; }
+        log_ok "  ✓ Virtual environment created"
+    else
+        log_ok "  ✓ Virtual environment already exists"
+    fi
+
     log "Installing Python dependencies..."
-    pip3 install -r requirements.txt --quiet 2>/dev/null || \
-        python3 -m pip install -r requirements.txt --quiet
-    log_ok "  ✓ Python packages installed"
+    ./.venv/bin/pip install --upgrade pip --quiet
+    ./.venv/bin/pip install -r requirements.txt --quiet
+    log_ok "  ✓ Python packages installed in .venv"
 
     # Node dependencies
     log "Installing frontend dependencies..."
@@ -385,12 +393,12 @@ if [ "$MODE" = "local" ]; then
     log_ok "  Zaytri installed successfully! 🚀"
     log_ok "═══════════════════════════════════════════════════"
     echo ""
+    log "  Local mode is using a virtual environment (.venv)"
     log "  To start Zaytri:"
-    echo "    cd ${INSTALL_DIR}"
     echo "    zaytri start"
     echo ""
     log "  Or manually:"
-    echo "    ./scripts/start.sh"
+    echo "    source .venv/bin/activate && ./scripts/start.sh"
     echo ""
 fi
 
