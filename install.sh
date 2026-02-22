@@ -35,6 +35,20 @@ log_ok()   { echo -e "${GREEN}[Zaytri]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[Zaytri]${NC} $1"; }
 log_err()  { echo -e "${RED}[Zaytri]${NC} $1"; }
 
+# ─── Security Warning ────────────────────────────────────────────────────────
+show_security_warning() {
+    echo ""
+    echo -e "${YELLOW}${BOLD}  ⚠️  SECURITY NOTIFICATION${NC}"
+    echo -e "  ─────────────────────────────────────────────────────"
+    echo -e "  Zaytri wants to install the '${BOLD}zaytri${NC}' command to your system"
+    echo -e "  so you can run it from anywhere. This requires ${BOLD}sudo${NC} privileges."
+    echo ""
+    echo -e "  ${BOLD}Security Risk:${NC} Only grant sudo access to scripts you trust."
+    echo -e "  Repository: ${REPO_URL}"
+    echo -e "  ─────────────────────────────────────────────────────"
+    echo ""
+}
+
 # ─── Parse args ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -392,22 +406,46 @@ chmod +x "$CLI_PATH" 2>/dev/null || true
 # Also make all scripts executable
 chmod +x "$INSTALL_DIR/scripts/"*.sh 2>/dev/null || true
 
-# Symlink to PATH
+# Potential bind targets
+BIN_DIRS=("/usr/local/bin" "$HOME/.local/bin" "$HOME/bin")
 LINK_TARGET=""
-if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
-    LINK_TARGET="/usr/local/bin/zaytri"
-elif [ -d "$HOME/.local/bin" ]; then
-    LINK_TARGET="$HOME/.local/bin/zaytri"
+
+for dir in "${BIN_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        LINK_TARGET="$dir/zaytri"
+        break
+    fi
+done
+
+# If no standard bin dir exists, fall back to creating ~/.local/bin
+if [ -z "$LINK_TARGET" ]; then
     mkdir -p "$HOME/.local/bin"
-elif [ -d "$HOME/bin" ]; then
-    LINK_TARGET="$HOME/bin/zaytri"
-    mkdir -p "$HOME/bin"
+    LINK_TARGET="$HOME/.local/bin/zaytri"
 fi
 
 if [ -n "$LINK_TARGET" ]; then
-    ln -sf "$CLI_PATH" "$LINK_TARGET" 2>/dev/null && \
-        log_ok "  ✓ 'zaytri' command installed → ${LINK_TARGET}" || \
-        log_warn "  ⚠ Could not create symlink. Run: sudo ln -sf ${CLI_PATH} /usr/local/bin/zaytri"
+    # Try to install without sudo first
+    if [ -w "$(dirname "$LINK_TARGET")" ]; then
+        ln -sf "$CLI_PATH" "$LINK_TARGET" 2>/dev/null && \
+            log_ok "  ✓ 'zaytri' command installed → ${LINK_TARGET}"
+    else
+        # Needs sudo or manual action
+        show_security_warning
+        log "Attempting to auto-bind 'zaytri' to ${LINK_TARGET} (via sudo)..."
+        
+        # Check if we can run sudo (interactivity check is hard in pipes, but sudo handles it)
+        if sudo ln -sf "$CLI_PATH" "$LINK_TARGET"; then
+            log_ok "  ✓ 'zaytri' command installed → ${LINK_TARGET} (via sudo)"
+        else
+            echo ""
+            log_warn "  ⚠ Auto-bind failed or was skipped."
+            log_warn "  To bind 'zaytri' manually, run:"
+            echo -e "    ${BOLD}sudo ln -sf ${CLI_PATH} ${LINK_TARGET}${NC}"
+            echo ""
+            log_warn "  Alternatively, add this to your shell profile:"
+            echo -e "    ${BOLD}export PATH=\"${INSTALL_DIR}:\$PATH\"${NC}"
+        fi
+    fi
 else
     log_warn "  ⚠ No writable bin directory found."
     log_warn "  Add this to your shell profile:"

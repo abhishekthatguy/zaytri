@@ -305,8 +305,11 @@ cmd_uninstall() {
     # Remove symlink
     for link in /usr/local/bin/zaytri "$HOME/.local/bin/zaytri" "$HOME/bin/zaytri"; do
         if [ -L "$link" ]; then
-            rm -f "$link" 2>/dev/null
-            log_ok "  ✓ Removed ${link}"
+            if [ -w "$link" ] || [ -w "$(dirname "$link")" ]; then
+                rm -f "$link" 2>/dev/null && log_ok "  ✓ Removed ${link}"
+            else
+                sudo rm -f "$link" 2>/dev/null && log_ok "  ✓ Removed ${link} (via sudo)"
+            fi
         fi
     done
 
