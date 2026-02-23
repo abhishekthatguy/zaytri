@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
 from db.base_enums import Platform
+import db.social_connections  # Ensures SQLAlchemy sees SocialConnection for relationship mappings
 
 import os
 try:
@@ -214,7 +215,7 @@ class DocumentEmbedding(Base):
     # Vector embedding (1536 dimensions for text-embedding-3-small, 768 for Ollama)
     embedding_dimension = Column(Integer, nullable=False, default=1536)
     # pgvector column — stores the actual vector for similarity search
-    embedding = Column(Vector(1536), nullable=True) if Vector else None
+    embedding = Column(Vector(), nullable=True) if Vector else None
 
     # Metadata
     metadata_json = Column(JSON, nullable=True)

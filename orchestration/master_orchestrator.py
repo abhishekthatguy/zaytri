@@ -11,6 +11,15 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# Register all models for SQLAlchemy relationships
+import auth.models  # noqa: F401
+import db.models     # noqa: F401
+import db.settings_models  # noqa: F401
+import db.social_connections  # noqa: F401
+import db.whatsapp_approval   # noqa: F401
+import db.calendar_models     # noqa: F401
+import db.task_models          # noqa: F401
+
 from brain.providers import BaseLLMProvider
 from infra.logging import get_logger, set_request_id, set_task_context
 from orchestration.intent_classifier import (
@@ -97,7 +106,8 @@ class MasterOrchestrator:
                         brand_details = []
                         for b in brands:
                             info = f"Brand: {b.brand_name}"
-                            if b.niche: info += f" | Niche: {b.niche}"
+                            b_niche = getattr(b, 'niche', None)
+                            if b_niche: info += f" | Niche: {b_niche}"
                             if b.target_audience: info += f" | Audience: {b.target_audience}"
                             brand_details.append(info)
                         
@@ -141,8 +151,8 @@ class MasterOrchestrator:
                     if rag_result.context_block:
                         rag_context_block = (
                             "\n\n=== BRAND KNOWLEDGE CONTEXT (RAG) ===\n"
-                            "Use ONLY the following context to answer brand-specific questions.\n"
-                            "If context is insufficient, say you don't know.\n\n"
+                            "Use both the KNOWLEDGE BASE (Brand Memory) and the following CONTEXT to answer questions.\n"
+                            "If the combined context is insufficient context for specific brand details, say you don't know.\n\n"
                             f"CONTEXT:\n{rag_result.context_block}\n"
                             "=== END CONTEXT ===\n"
                         )

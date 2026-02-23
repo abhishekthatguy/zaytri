@@ -439,27 +439,18 @@ class RAGEngine:
                     {"source": "knowledge_source", "url": ks.url},
                 ))
 
-        # Brand data as documents
-        if brand.brand_guidelines:
+        # 3. Document chunks from embeddings table (even if vectors are missing)
+        chunks = (await session.execute(
+            select(DocumentEmbedding).where(
+                DocumentEmbedding.brand_id == str(brand.id)
+            )
+        )).scalars().all()
+
+        for chunk in chunks:
             documents.append((
-                f"guidelines_{str(brand.id)[:8]}",
-                f"Brand Guidelines for {brand.brand_name}: {brand.brand_guidelines}",
-                "Brand Guidelines", "brand_config",
-                {"source": "brand_settings"},
-            ))
-        if brand.core_values:
-            documents.append((
-                f"values_{str(brand.id)[:8]}",
-                f"Core Values of {brand.brand_name}: {brand.core_values}",
-                "Core Values", "brand_config",
-                {"source": "brand_settings"},
-            ))
-        if brand.target_audience:
-            documents.append((
-                f"audience_{str(brand.id)[:8]}",
-                f"Target Audience for {brand.brand_name}: {brand.target_audience}",
-                "Target Audience", "brand_config",
-                {"source": "brand_settings"},
+                str(chunk.id), chunk.chunk_text,
+                chunk.source_name, chunk.source_type,
+                chunk.metadata_json or {"source": "document_chunk"},
             ))
 
         result.total_embeddings = len(documents)
@@ -628,17 +619,20 @@ class RAGEngine:
                 vectors = await provider.embed(raw_texts)
 
                 for (text, source_name, source_type, c_hash, metadata), vector in zip(new_texts, vectors):
-                    embedding = DocumentEmbedding(
-                        brand_id=brand_id,
-                        chunk_text=text,
-                        chunk_index=metadata.get("chunk_index", 0),
-                        content_hash=c_hash,
-                        source_name=source_name,
-                        source_type=source_type,
-                        embedding_dimension=len(vector),
-                        embedding=vector,
-                        metadata_json=metadata,
-                    )
+                    emb_data = {
+                        "brand_id": brand_id,
+                        "chunk_text": text,
+                        "chunk_index": metadata.get("chunk_index", 0),
+                        "content_hash": c_hash,
+                        "source_name": source_name,
+                        "source_type": source_type,
+                        "embedding_dimension": len(vector) if vector else 0,
+                        "metadata_json": metadata,
+                    }
+                    if hasattr(DocumentEmbedding, "embedding") and DocumentEmbedding.embedding is not None:
+                        emb_data["embedding"] = vector
+
+                    embedding = DocumentEmbedding(**emb_data)
                     sess.add(embedding)
                     results["embedded"] += 1
 

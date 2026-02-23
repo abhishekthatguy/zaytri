@@ -678,7 +678,7 @@ async def delete_brand(
 
 @router.get("/knowledge", response_model=List[KnowledgeSourceResponse])
 async def list_knowledge_sources(
-    brand_id: Optional[UUID] = None,
+    brand_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
