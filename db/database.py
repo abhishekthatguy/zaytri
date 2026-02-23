@@ -45,7 +45,18 @@ async def get_db() -> AsyncSession:
 
 # ─── Init / Teardown ────────────────────────────────────────────────────────
 async def init_db():
-    """Create all tables on startup."""
+    """Create pgvector extension and all tables on startup."""
+    # 1. Enable pgvector extension in its own transaction (non-fatal)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                __import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector")
+            )
+    except Exception as e:
+        from logging import getLogger
+        getLogger("zaytri.db").warning(f"⚠️ pgvector extension not available: {e}. Falling back to text-based similarity.")
+    
+    # 2. Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

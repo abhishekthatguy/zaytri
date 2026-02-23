@@ -115,14 +115,12 @@ class TestActionExecutor:
         assert result["success"] is True
 
     @pytest.mark.asyncio
-    @patch("agents.master_agent.async_session", create=True)
     async def test_assign_llm_key_missing_params(self):
         result = await self.executor.execute("assign_llm_key", {})
         assert result["success"] is False
         assert "required" in result["message"].lower()
 
     @pytest.mark.asyncio
-    @patch("agents.master_agent.async_session", create=True)
     async def test_run_workflow_missing_topic(self):
         result = await self.executor.execute("run_workflow", {"platform": "instagram"})
         assert result["success"] is False
@@ -214,10 +212,7 @@ class TestMasterAgentChat:
 
     @pytest.mark.asyncio
     async def test_chat_llm_failure_fallback(self):
-        mock_llm = AsyncMock()
-        mock_llm.generate = AsyncMock(side_effect=Exception("LLM down"))
-
-        with patch("agents.master_agent.get_llm", return_value=mock_llm):
+        with patch.object(self.agent, "_call_llm_with_fallback", return_value=None):
             result = await self.agent.chat(
                 message="Hello",
                 user_id="test-user",
@@ -225,7 +220,7 @@ class TestMasterAgentChat:
 
         # Should fallback to general_chat
         assert result["intent"] == "general_chat"
-        assert "try again" in result["response"].lower()
+        assert "trouble connecting" in result["response"].lower()
 
     @pytest.mark.asyncio
     async def test_chat_workflow_intent(self):
@@ -252,6 +247,31 @@ class TestMasterAgentChat:
         assert result["action_success"] is True
         assert result["action_data"] is not None
 
+    @pytest.mark.asyncio
+    async def test_chat_image_generation_intent(self):
+        mock_llm = AsyncMock()
+        mock_llm.generate = AsyncMock(return_value=json.dumps({
+            "intent": "create_image",
+            "params": {"prompt": "A futuristic city in the clouds"},
+            "response": "Generating your image now!",
+        }))
+        
+        with patch("agents.master_agent.get_llm", return_value=mock_llm), \
+             patch("agents.image_generator.ImageGeneratorAgent.run") as mock_execute:
+            mock_execute.return_value = {
+                "success": True, 
+                "message": "Image generated",
+                "data": {"image_url": "https://placehold.co/1024x1024"}
+            }
+            
+            result = await self.agent.chat(
+                message="Generate an image of a futuristic city",
+                user_id="test-user"
+            )
+            
+        assert result["intent"] == "create_image"
+        assert result["action_success"] is True
+        assert "image_url" in result["action_data"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Integration Checks

@@ -24,6 +24,7 @@ class SocialConnection(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brand_settings.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Platform identity
     platform = Column(SAEnum(Platform), nullable=False)
@@ -57,4 +58,5 @@ class SocialConnection(Base):
 
     # Relationships
     user = relationship("User", back_populates="social_connections")
+    brand = relationship("BrandSettings", back_populates="social_connections")
     contents = relationship("Content", back_populates="social_connection")

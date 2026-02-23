@@ -19,8 +19,10 @@ async def test_content_creator_agent():
         "post_text": "🚀 Stop doing this manually... AI automation is here.",
     }
 
-    with patch("agents.content_creator.llm") as mock_llm:
-        mock_llm.generate_json = AsyncMock(return_value=mock_response)
+    with patch("agents.content_creator.get_llm") as mock_get_llm:
+        mock_llm = AsyncMock()
+        mock_llm.generate_json.return_value = mock_response
+        mock_get_llm.return_value = mock_llm
 
         from agents.content_creator import ContentCreatorAgent
         agent = ContentCreatorAgent()
@@ -48,8 +50,10 @@ async def test_hashtag_generator_agent():
         "broad_hashtags": ["#AI", "#Technology", "#Startup"],
     }
 
-    with patch("agents.hashtag_generator.llm") as mock_llm:
-        mock_llm.generate_json = AsyncMock(return_value=mock_response)
+    with patch("agents.hashtag_generator.get_llm") as mock_get_llm:
+        mock_llm = AsyncMock()
+        mock_llm.generate_json.return_value = mock_response
+        mock_get_llm.return_value = mock_llm
 
         from agents.hashtag_generator import HashtagGeneratorAgent
         agent = HashtagGeneratorAgent()
@@ -80,8 +84,10 @@ async def test_review_agent_approved():
         "is_approved": True,
     }
 
-    with patch("agents.review_agent.llm") as mock_llm:
-        mock_llm.generate_json = AsyncMock(return_value=mock_response)
+    with patch("agents.review_agent.get_llm") as mock_get_llm:
+        mock_llm = AsyncMock()
+        mock_llm.generate_json.return_value = mock_response
+        mock_get_llm.return_value = mock_llm
 
         from agents.review_agent import ReviewAgent
         agent = ReviewAgent()
@@ -115,8 +121,10 @@ async def test_review_agent_rejected():
         "is_approved": False,
     }
 
-    with patch("agents.review_agent.llm") as mock_llm:
-        mock_llm.generate_json = AsyncMock(return_value=mock_response)
+    with patch("agents.review_agent.get_llm") as mock_get_llm:
+        mock_llm = AsyncMock()
+        mock_llm.generate_json.return_value = mock_response
+        mock_get_llm.return_value = mock_llm
 
         from agents.review_agent import ReviewAgent
         agent = ReviewAgent()

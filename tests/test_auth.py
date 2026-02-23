@@ -322,9 +322,10 @@ class TestSeed:
 
     def test_default_credentials(self):
         from auth.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD
-        assert DEFAULT_ADMIN_EMAIL == "zaytri@gmail.com"
-        assert DEFAULT_ADMIN_USERNAME == "admin"
-        assert DEFAULT_ADMIN_PASSWORD == "avii1994"
+        from config import settings
+        assert DEFAULT_ADMIN_EMAIL == settings.default_admin_email
+        assert DEFAULT_ADMIN_USERNAME == settings.default_admin_username
+        assert DEFAULT_ADMIN_PASSWORD == settings.default_admin_password
 
     def test_password_is_hashed_before_storage(self):
         """Verify the seed function hashes the password."""

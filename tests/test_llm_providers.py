@@ -517,7 +517,7 @@ class TestAgentUsesRouter:
 
     @pytest.mark.asyncio
     async def test_content_creator_uses_get_llm(self):
-        with patch("brain.llm_router.get_llm") as mock_get_llm:
+        with patch("agents.content_creator.get_llm") as mock_get_llm:
             mock_provider = AsyncMock()
             mock_provider.generate_json.return_value = {
                 "caption": "Test caption",
@@ -540,7 +540,7 @@ class TestAgentUsesRouter:
 
     @pytest.mark.asyncio
     async def test_hashtag_generator_uses_get_llm(self):
-        with patch("brain.llm_router.get_llm") as mock_get_llm:
+        with patch("agents.hashtag_generator.get_llm") as mock_get_llm:
             mock_provider = AsyncMock()
             mock_provider.generate_json.return_value = {
                 "niche_hashtags": ["#AI", "#ML"],
@@ -560,7 +560,7 @@ class TestAgentUsesRouter:
 
     @pytest.mark.asyncio
     async def test_review_agent_uses_get_llm(self):
-        with patch("brain.llm_router.get_llm") as mock_get_llm:
+        with patch("agents.review_agent.get_llm") as mock_get_llm:
             mock_provider = AsyncMock()
             mock_provider.generate_json.return_value = {
                 "grammar_score": 9,
@@ -597,6 +597,7 @@ class TestConstants:
         expected = [
             "content_creator", "hashtag_generator",
             "review_agent", "engagement_bot", "analytics_agent",
+            "master_agent",
         ]
         assert AGENT_IDS == expected
 
@@ -607,5 +608,5 @@ class TestConstants:
 
     def test_provider_models_include_major_providers(self):
         from brain.llm_router import PROVIDER_MODELS
-        expected_providers = {"ollama", "openai", "gemini", "anthropic", "groq"}
+        expected_providers = {"ollama", "openai", "gemini", "anthropic", "groq", "openrouter"}
         assert set(PROVIDER_MODELS.keys()) == expected_providers

@@ -35,6 +35,7 @@ INTENT_PLANS: Dict[str, List[str]] = {
     "list_agents": ["llm_settings_service"],
     "get_settings": ["settings_service"],
     "list_calendar": ["calendar_service"],
+    "create_image": ["image_generator"],
 }
 
 # Intents that don't need a TaskExecution record

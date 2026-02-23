@@ -9,6 +9,7 @@ from agents.engagement_bot import EngagementBot
 from agents.analytics_agent import AnalyticsAgent
 from agents.data_parser_agent import DataParserAgent
 from agents.master_agent import MasterAgent
+from agents.image_generator import ImageGeneratorAgent
 
 __all__ = [
     "BaseAgent",
@@ -21,5 +22,6 @@ __all__ = [
     "AnalyticsAgent",
     "DataParserAgent",
     "MasterAgent",
+    "ImageGeneratorAgent",
 ]
 

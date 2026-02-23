@@ -32,12 +32,20 @@ GUEST_USER_ID = "guest"
 
 # ─── Schemas ────────────────────────────────────────────────────────────────
 
+class ContextControls(BaseModel):
+    brand_memory: bool = True
+    calendar_context: bool = True
+    past_posts: bool = True
+    engagement_data: bool = False
+
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None  # Omit to start new conversation
     model: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    exec_mode: Optional[str] = None
+    context_controls: Optional[ContextControls] = None
 
 class ChatResponse(BaseModel):
     conversation_id: str
@@ -91,14 +99,30 @@ async def send_chat_message(
 
     # Process through V3 Master Orchestrator
     try:
-        # Pass the requested constraints down if explicitly set from the UI
-        kwargs = {}
+        # Check if the user specifically requested a model
+        llm_instance = master_orchestrator.llm
+        if req.model:
+            llm_instance = llm_router.get_provider_for_model_override(req.model)
+            if hasattr(req, "temperature") and req.temperature is not None:
+                # Store overrides dynamically on the instance (safe because it's transient)
+                setattr(llm_instance, "_temp_override", req.temperature)
+
+        # Check execution modes
+        deterministic = req.exec_mode == "deterministic"
+        force_rag = req.exec_mode == "force-rag"
+
         # In a fully fleshed out version, MasterOrchestrator would take these hints
+        context_controls_dict = req.context_controls.model_dump() if req.context_controls else {}
+        
         result = await master_orchestrator.chat(
             message=req.message,
             user_id=user_id,
             conversation_history=history,
             is_authenticated=is_authenticated,
+            llm_override=llm_instance,
+            context_controls=context_controls_dict,
+            deterministic=deterministic,
+            force_rag=force_rag
         )
         
         # Mock token cost for now, since MasterOrchestrator might not return it natively yet
@@ -195,35 +219,82 @@ async def list_conversations(
     user: User = Depends(get_current_user),
 ):
     """List recent conversations for the current user."""
-    from sqlalchemy import func, distinct
+    from sqlalchemy import func, distinct, case
 
-    # Get distinct conversation IDs with their latest message
-    subq = (
+    # 1) Get the last activity time for each conversation
+    last_activity_subq = (
         select(
             ChatMessage.conversation_id,
-            func.max(ChatMessage.created_at).label("last_at"),
-            func.min(ChatMessage.content).label("first_message"),
+            func.max(ChatMessage.created_at).label("last_at")
+        )
+        .where(ChatMessage.user_id == str(user.id))
+        .group_by(ChatMessage.conversation_id)
+        .subquery()
+    )
+
+    # 2) Get the renamed title (if any)
+    title_subq = (
+        select(
+            ChatMessage.conversation_id,
+            ChatMessage.content.label("custom_title")
         )
         .where(
             ChatMessage.user_id == str(user.id),
-            ChatMessage.role == "user",
+            ChatMessage.role == "system",
+            ChatMessage.intent == "chat_title"
         )
-        .group_by(ChatMessage.conversation_id)
-        .order_by(func.max(ChatMessage.created_at).desc())
+        # We only need the latest one if multiple exist
+        .order_by(ChatMessage.created_at.desc())
+        .subquery()
+    )
+
+    # 3) Get the FIRST user message (for preview fallback)
+    # Using window function to get row_number per conversation ordered by created_at
+    from sqlalchemy.orm import aliased
+    user_msgs = (
+        select(
+            ChatMessage.conversation_id,
+            ChatMessage.content,
+            func.row_number().over(
+                partition_by=ChatMessage.conversation_id,
+                order_by=ChatMessage.created_at.asc()
+            ).label("rn")
+        )
+        .where(
+            ChatMessage.user_id == str(user.id),
+            ChatMessage.role == "user"
+        )
+        .subquery()
+    )
+    first_msg_subq = select(user_msgs).where(user_msgs.c.rn == 1).subquery()
+
+    # Join them all together
+    query = (
+        select(
+            last_activity_subq.c.conversation_id,
+            last_activity_subq.c.last_at,
+            title_subq.c.custom_title,
+            first_msg_subq.c.content.label("first_message")
+        )
+        .outerjoin(title_subq, last_activity_subq.c.conversation_id == title_subq.c.conversation_id)
+        .outerjoin(first_msg_subq, last_activity_subq.c.conversation_id == first_msg_subq.c.conversation_id)
+        .order_by(last_activity_subq.c.last_at.desc())
         .limit(20)
     )
 
-    result = await db.execute(subq)
+    result = await db.execute(query)
     rows = result.all()
 
-    return [
-        {
+    conversations = []
+    for r in rows:
+        # Use custom title if defined, else fallback to first message prefix
+        preview_text = r.custom_title if r.custom_title else (r.first_message or "")[:80]
+        conversations.append({
             "conversation_id": r.conversation_id,
-            "preview": (r.first_message or "")[:80],
+            "preview": preview_text,
             "last_at": r.last_at.isoformat() if r.last_at else None,
-        }
-        for r in rows
-    ]
+        })
+    return conversations
 
 
 @router.delete("/conversations/{conversation_id}")
@@ -256,26 +327,48 @@ async def rename_conversation(
     user: User = Depends(get_current_user),
 ):
     """Rename a conversation. Since we don't have a conversation table, we can just update the first message content which serves as the preview."""
-    from sqlalchemy import update
+    from sqlalchemy import update, literal_column
     
-    # Update the content of the first message to serve as the new preview/title
+    # Check if a custom title message already exists
     subq = (
-        select(ChatMessage.id)
+        select(ChatMessage)
         .where(
             ChatMessage.conversation_id == conversation_id,
             ChatMessage.user_id == str(user.id),
+            ChatMessage.role == "system",
+            ChatMessage.intent == "chat_title"
         )
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.created_at.desc())
         .limit(1)
     )
-    first_msg_id = await db.scalar(subq)
+    title_msg = await db.scalar(subq)
 
-    if first_msg_id:
-        await db.execute(
-            update(ChatMessage)
-            .where(ChatMessage.id == first_msg_id)
-            .values(content=req.preview)
+    # 1. Ensure the conversation actually exists (must have at least one message)
+    conv_exists = await db.scalar(
+        select(ChatMessage.id)
+        .where(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.user_id == str(user.id)
         )
-        await db.commit()
-        return {"status": "renamed"}
-    return {"status": "not_found"}
+        .limit(1)
+    )
+
+    if not conv_exists:
+        return {"status": "not_found"}
+
+    if title_msg:
+        # Update existing title
+        title_msg.content = req.preview
+    else:
+        # Create new title message
+        new_title = ChatMessage(
+            conversation_id=conversation_id,
+            user_id=str(user.id),
+            role="system",
+            intent="chat_title",
+            content=req.preview
+        )
+        db.add(new_title)
+
+    await db.commit()
+    return {"status": "renamed"}

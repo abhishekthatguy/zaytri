@@ -150,6 +150,44 @@ class LLMRouter:
 
         return self.get_default_provider()
 
+    def get_provider_for_model_override(self, model_val: str) -> BaseLLMProvider:
+        """Get LLM Provider from frontend display name/value"""
+        if not model_val: return self.get_default_provider()
+        
+        mdl = model_val.lower()
+        from config import settings
+        from brain.providers.ollama_provider import OllamaProvider
+        from brain.providers.openai_provider import OpenAIProvider
+        from brain.providers.openrouter_provider import OpenRouterProvider
+        
+        if "mistral" in mdl:
+            return OllamaProvider(host=settings.ollama_host, model="mistral:latest")
+        elif "ollama" in mdl or "llama 3" in mdl:
+            return OllamaProvider(host=settings.ollama_host, model="llama3:latest")
+        elif "deepseek" in mdl:
+            return OllamaProvider(host=settings.ollama_host, model="deepseek-r1:latest")
+        elif "gpt" in mdl:
+            try:
+                from sqlalchemy import create_engine, select
+                from sqlalchemy.orm import Session
+                from db.settings_models import LLMProviderConfig
+                from utils.crypto import decrypt_value
+                sync_url = settings.database_url.replace("+asyncpg", "").replace("postgresql://", "postgresql://")
+                engine = create_engine(sync_url)
+                with Session(engine) as session:
+                    cfg = session.execute(select(LLMProviderConfig).where(LLMProviderConfig.provider == "openai")).scalar_one_or_none()
+                    if cfg and cfg.api_key_encrypted:
+                        return OpenAIProvider(api_key=decrypt_value(cfg.api_key_encrypted), model="gpt-4o")
+            except Exception:
+                pass
+            return self.get_default_provider()
+        elif "/" in mdl:
+            if settings.open_router_api_key:
+                 return OpenRouterProvider(api_key=settings.open_router_api_key, model=model_val)
+        
+        return self.get_default_provider()
+
+
     def _load_agent_config(self, agent_id: str) -> Optional[BaseLLMProvider]:
         """Load agent-specific LLM config from DB (sync)."""
         try:

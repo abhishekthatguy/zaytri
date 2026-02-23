@@ -62,7 +62,24 @@ export default function ChatPage() {
 
     const [execMode, setExecMode] = useState("chat_only");
 
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const savedModel = localStorage.getItem("zaytri_chat_model");
+            if (savedModel) setModel(savedModel);
+            const savedTemp = localStorage.getItem("zaytri_chat_temp");
+            if (savedTemp) setTemp(parseFloat(savedTemp));
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("zaytri_chat_model", model);
+            localStorage.setItem("zaytri_chat_temp", temp.toString());
+        }
+    }, [model, temp]);
+
     const [contextToggles, setContextToggles] = useState({
+
         brandMemory: true,
         calendarContext: true,
         pastPosts: true,

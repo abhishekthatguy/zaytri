@@ -611,13 +611,13 @@ class ActionExecutor:
         if not prompt:
             return {"success": False, "message": "No prompt provided for image generation."}
         
-        # We will mock image generation for now until a real sub-agent is wired up
-        # This resolves the orchestration failure where the Master Agent says "I can't generate images"
-        return {
-            "success": True, 
-            "message": f"Delegated image generation task to visual agent for prompt: '{prompt}'",
-            "data": {"image_url": "https://placehold.co/600x400/png", "prompt_used": prompt}
-        }
+        from agents.image_generator import ImageGeneratorAgent
+        
+        # We now use the dedicated sub-agent
+        agent = ImageGeneratorAgent(user_id=self.user_id, session=self.session)
+        result = await agent.run({"prompt": prompt})
+        
+        return result
 
     async def _handle_approve_content(self, params: dict) -> dict:
         content_id = params.get("content_id", "")
@@ -1148,11 +1148,14 @@ Respond ONLY with valid JSON matching the schema from your instructions."""
             except json.JSONDecodeError:
                 pass
 
-        # Try finding JSON object in the text
-        match = re.search(r"\{[^{}]*\"intent\"[^{}]*\}", raw, re.DOTALL)
-        if match:
+        # Try finding JSON object in the text using basic start/end braces
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
             try:
-                return json.loads(match.group(0))
+                parsed = json.loads(raw[start:end+1])
+                if "intent" in parsed:
+                    return parsed
             except json.JSONDecodeError:
                 pass
 

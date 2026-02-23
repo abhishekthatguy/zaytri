@@ -1,11 +1,13 @@
 """
 Zaytri — Master Orchestrator
-Thin coordinator (~150 lines) replacing the 1121-line monolith.
-Delegates to: IntentClassifier → BrandResolver → TaskPlanner → ExecutionController.
+Thin coordinator replacing the 1121-line monolith.
+Delegates to: IntentClassifier → BrandResolver → RAGEngine → TaskPlanner → ExecutionController.
+Multi-layer RAG context injection with hallucination guards.
 """
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -62,22 +64,133 @@ class MasterOrchestrator:
         user_id: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         is_authenticated: bool = True,
+        llm_override: Optional[BaseLLMProvider] = None,
+        context_controls: Optional[Dict[str, Any]] = None,
+        force_rag: bool = False,
+        deterministic: bool = False,
     ) -> Dict[str, Any]:
         """
         Process a chat message through the orchestration pipeline.
         """
+        pipeline_start = time.perf_counter()
         logger.info(f"Received: {message[:80]}...")
+        
+        # Use provided LLM override or fallback to default
+        _llm = llm_override or self.llm
+        _context_controls = context_controls or {}
+        
+        # Deterministic mode: force temperature=0 for reproducible output
+        _temperature_override = 0.0 if deterministic else None
 
         # ── 1. Classify intent via LLM ───────────────────────────────
         memory_ctx = user_memory.get_context(user_id)
-
+        
+        # --- Multi-RAG specific context injection ---
+        if _context_controls.get("brand_memory", True) and is_authenticated:
+            try:
+                from db.database import async_session
+                from orchestration.brand_resolver import BrandResolver
+                async with async_session() as session:
+                    resolver = BrandResolver(session)
+                    brands = await resolver.list_brands(user_id)
+                    if brands:
+                        brand_details = []
+                        for b in brands:
+                            info = f"Brand: {b.brand_name}"
+                            if b.niche: info += f" | Niche: {b.niche}"
+                            if b.target_audience: info += f" | Audience: {b.target_audience}"
+                            brand_details.append(info)
+                        
+                        memory_ctx += "\n\nKNOWLEDGE BASE (Brand Memory):\n" + "\n".join(brand_details)
+            except Exception as e:
+                logger.warning(f"Failed to load brand memory for RAG: {e}")
+        # --------------------------------------------
+        
+        # ── Multi-Layer RAG Context Injection ────────────────────────────
+        rag_context_block = ""
+        rag_debug_info = {}
         try:
-            intent_result = await classify_intent(
+            from brain.rag_engine import get_rag_engine
+            rag_engine = get_rag_engine()
+            
+            # Resolve brand for RAG
+            async with async_session() as rag_session:
+                from orchestration.brand_resolver import BrandResolver as _BR
+                _resolver = _BR(rag_session)
+                _brand = await _resolver.resolve(user_id, None)
+                
+                if _brand and is_authenticated:
+                    rag_start = time.perf_counter()
+                    rag_result = await rag_engine.build_rag_context(
+                        brand_id=str(_brand.id),
+                        query=message,
+                        force_rag=force_rag,
+                        session=rag_session,
+                    )
+                    rag_end = time.perf_counter()
+                    
+                    rag_debug_info = {
+                        "brand": rag_result.brand_name,
+                        "namespace": rag_result.namespace,
+                        "retrieved_docs": len(rag_result.retrieved_chunks),
+                        "similarity_scores": rag_result.similarity_scores,
+                        "is_sufficient": rag_result.is_sufficient,
+                        "retrieval_time_ms": round(rag_result.retrieval_time_ms, 1),
+                    }
+                    
+                    if rag_result.context_block:
+                        rag_context_block = (
+                            "\n\n=== BRAND KNOWLEDGE CONTEXT (RAG) ===\n"
+                            "Use ONLY the following context to answer brand-specific questions.\n"
+                            "If context is insufficient, say you don't know.\n\n"
+                            f"CONTEXT:\n{rag_result.context_block}\n"
+                            "=== END CONTEXT ===\n"
+                        )
+                        memory_ctx += rag_context_block
+                    
+                    # Force-RAG: block LLM if no relevant context
+                    if force_rag and not rag_result.is_sufficient:
+                        logger.warning("Force-RAG mode: no sufficient context, blocking LLM")
+                        return {
+                            "intent": "general_chat",
+                            "response": (
+                                "I do not have sufficient brand knowledge to answer this. "
+                                "No relevant brand knowledge found."
+                            ),
+                            "action_success": False,
+                            "action_data": {"rag_blocked": True, **rag_debug_info},
+                        }
+                    
+                    logger.info(
+                        f"RAG injected: {len(rag_result.retrieved_chunks)} chunks, "
+                        f"sufficient={rag_result.is_sufficient}, "
+                        f"retrieval={rag_result.retrieval_time_ms:.1f}ms"
+                    )
+        except Exception as e:
+            logger.warning(f"RAG context injection failed (non-fatal): {e}")
+        # ────────────────────────────────────────────────────────────────
+        
+        try:
+            # Build classification kwargs
+            classify_kwargs = dict(
                 message=message,
-                llm=self.llm,
+                llm=_llm,
                 user_context=memory_ctx,
                 conversation_history=conversation_history,
             )
+            
+            if _temperature_override is not None:
+                classify_kwargs["temperature"] = _temperature_override
+            
+            # TODO: REMOVE BEFORE PRODUCTION — Debug print of final prompt
+            print("FINAL PROMPT SENT TO LLM:")
+            print(f"User Context (with RAG):\n{memory_ctx}")
+            print(f"Message: {message}")
+            if rag_debug_info:
+                print(f"RAG Debug: {json.dumps(rag_debug_info, indent=2)}")
+            
+            llm_start = time.perf_counter()
+            intent_result = await classify_intent(**classify_kwargs)
         except Exception:
             # Total LLM failure
             logger.warning("All LLMs failed — returning offline response")
@@ -184,12 +297,31 @@ class MasterOrchestrator:
                 )
                 llm_response += f"\n\n{items_text}"
 
-        # ── 5. Record interaction ────────────────────────────────────
+        # ── 5. Record interaction & performance logging ────────────────
         user_memory.record_interaction(user_id, intent, message, params)
+        
+        pipeline_end = time.perf_counter()
+        total_pipeline_ms = (pipeline_end - pipeline_start) * 1000
+        
+        logger.info(
+            f"Pipeline complete: intent={intent}, "
+            f"total={total_pipeline_ms:.0f}ms"
+        )
 
-        return {
+        response_data = {
             "intent": intent,
             "response": llm_response,
             "action_success": action_result.get("success", True),
             "action_data": action_result.get("data"),
         }
+        
+        # Attach RAG debug info if available
+        if rag_debug_info:
+            response_data["rag_debug"] = rag_debug_info
+        
+        # Attach performance info
+        response_data["performance"] = {
+            "total_pipeline_ms": round(total_pipeline_ms, 1),
+        }
+        
+        return response_data

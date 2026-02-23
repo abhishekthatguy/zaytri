@@ -289,6 +289,7 @@ export interface SocialConnectionInfo {
   connected_at: string | null;
   last_used_at: string | null;
   last_error: string | null;
+  brand_id: string | null;
 }
 
 export async function listSocialPlatforms(): Promise<SocialPlatformInfo[]> {
@@ -321,8 +322,15 @@ export async function listSocialConnections(
   return apiFetch(`/social/connections${query}`);
 }
 
-export async function disconnectSocialAccount(connectionId: string) {
+export async function disconnectSocialAccount(connectionId: string): Promise<void> {
   return apiFetch(`/social/connections/${connectionId}`, { method: "DELETE" });
+}
+
+export async function updateSocialConnection(connectionId: string, data: { brand_id: string | null }): Promise<SocialConnectionInfo> {
+  return apiFetch(`/social/connections/${connectionId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
 }
 
 export async function permanentlyDeleteSocialConnection(connectionId: string) {
@@ -357,6 +365,77 @@ export async function updateGoogleDriveConfig(data: {
 
 export async function disconnectGoogleDrive() {
   return apiFetch("/settings/google-drive", { method: "DELETE" });
+}
+
+// ─── Settings: Brands ──────────────────────────────────────────────────────
+
+export interface BrandSettings {
+  id: string;
+  brand_name: string;
+  target_audience: string | null;
+  brand_tone: string | null;
+  brand_guidelines: string | null;
+  core_values: string | null;
+}
+
+export async function listBrands(): Promise<BrandSettings[]> {
+  return apiFetch("/settings/brands");
+}
+
+export async function createBrand(data: Partial<BrandSettings>): Promise<BrandSettings> {
+  return apiFetch("/settings/brands", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateBrand(id: string, data: Partial<BrandSettings>): Promise<BrandSettings> {
+  return apiFetch(`/settings/brands/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteBrand(id: string) {
+  return apiFetch(`/settings/brands/${id}`, { method: "DELETE" });
+}
+
+// ─── Settings: Knowledge Sources ──────────────────────────────────────────
+
+export interface KnowledgeSource {
+  id: string;
+  brand_id: string | null;
+  source_type: string;
+  name: string;
+  url: string | null;
+  content_summary: string | null;
+  is_active: boolean;
+  last_indexed_at: string | null;
+  vector_count: number;
+  created_at: string;
+}
+
+export async function listKnowledgeSources(brand_id?: string): Promise<KnowledgeSource[]> {
+  const query = brand_id ? `?brand_id=${brand_id}` : "";
+  return apiFetch(`/settings/knowledge${query}`);
+}
+
+export async function createKnowledgeSource(data: Partial<KnowledgeSource>): Promise<KnowledgeSource> {
+  return apiFetch("/settings/knowledge", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateKnowledgeSource(id: string, data: Partial<KnowledgeSource>): Promise<KnowledgeSource> {
+  return apiFetch(`/settings/knowledge/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteKnowledgeSource(id: string) {
+  return apiFetch(`/settings/knowledge/${id}`, { method: "DELETE" });
 }
 
 // ─── Settings: LLM Providers ──────────────────────────────────────────────

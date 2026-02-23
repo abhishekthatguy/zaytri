@@ -35,14 +35,22 @@ async def test_content_pipeline_full():
         "is_approved": True,
     }
 
-    with patch("agents.content_creator.llm") as mock_cc_llm, \
-         patch("agents.hashtag_generator.llm") as mock_hg_llm, \
-         patch("agents.review_agent.llm") as mock_ra_llm, \
-         patch("workflow.pipeline.async_session") as mock_session_factory:
+    with patch("agents.content_creator.get_llm") as mock_get_cc_llm, \
+         patch("agents.hashtag_generator.get_llm") as mock_get_hg_llm, \
+         patch("agents.review_agent.get_llm") as mock_get_ra_llm, \
+         patch("db.database.async_session") as mock_session_factory:
 
-        mock_cc_llm.generate_json = AsyncMock(return_value=content_mock)
-        mock_hg_llm.generate_json = AsyncMock(return_value=hashtag_mock)
-        mock_ra_llm.generate_json = AsyncMock(return_value=review_mock)
+        mock_cc_llm = AsyncMock()
+        mock_cc_llm.generate_json.return_value = content_mock
+        mock_get_cc_llm.return_value = mock_cc_llm
+
+        mock_hg_llm = AsyncMock()
+        mock_hg_llm.generate_json.return_value = hashtag_mock
+        mock_get_hg_llm.return_value = mock_hg_llm
+
+        mock_ra_llm = AsyncMock()
+        mock_ra_llm.generate_json.return_value = review_mock
+        mock_get_ra_llm.return_value = mock_ra_llm
 
         # Mock the database session
         mock_session = AsyncMock()

@@ -16,6 +16,11 @@
 #   zaytri docker logs         Docker Compose logs
 #   zaytri docker build        Build Docker images
 #   zaytri chat <message>      Send a quick message to the Master Agent
+#   zaytri rag-check           Check RAG embedding health for a brand
+#   zaytri rag-test             Test RAG retrieval for a brand + query
+#   zaytri rag-debug            Full RAG pipeline debug report
+#   zaytri demo <brand>         Run deterministic RAG demo
+#   zaytri embed --brand <name> Generate pgvector embeddings for a brand
 #   zaytri config              Show current port & env config
 #   zaytri flush-redis         Clear Redis cache
 #   zaytri update              Pull latest code + re-install deps
@@ -498,6 +503,13 @@ cmd_help() {
     echo "  update              Pull latest code + update dependencies"
     echo "  uninstall           Remove Zaytri completely"
     echo ""
+    echo -e "${BOLD}RAG Pipeline:${NC}"
+    echo "  rag-check           Check embedding health for a brand"
+    echo "  rag-test            Test retrieval for a brand + query"
+    echo "  rag-debug           Full RAG pipeline debug report"
+    echo "  demo <brand>        Run deterministic RAG demo"
+    echo "  embed               Generate pgvector embeddings for a brand"
+    echo ""
     echo -e "${BOLD}Info:${NC}"
     echo "  help                Show this help"
     echo "  version             Show version"
@@ -535,6 +547,12 @@ case "$COMMAND" in
     docker)       cmd_docker "$@" ;;
     deploy|remote-status|remote-logs|remote-restart|remote-up|remote-down|ssl|vm-ssh)
         cmd_deploy "$COMMAND" "$@"
+        ;;
+    rag-check|rag-test|rag-debug|demo|embed)
+        resolve_python
+        load_env
+        cd "$ZAYTRI_HOME"
+        $PYTHON -m cli.rag_commands "$COMMAND" "$@"
         ;;
     help|--help|-h) cmd_help ;;
     version|--version|-v) cmd_version ;;

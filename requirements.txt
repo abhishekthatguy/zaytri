@@ -39,6 +39,13 @@ pytest-asyncio==0.25.0
 pytest-cov==6.0.0
 httpx  # also used for TestClient
 
+# ─── Vector Search (RAG) ─────────────────────────────────────────────────────
+pgvector==0.3.6
+openai==1.61.0
+numpy==2.2.2
+
 # ─── Utilities ───────────────────────────────────────────────────────────────
 python-dateutil==2.9.0
 cryptography==44.0.0
+typer==0.15.1
+rich==13.9.4

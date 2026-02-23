@@ -42,8 +42,12 @@ class SocialConnectionResponse(BaseModel):
     connected_at: Optional[datetime] = None
     last_used_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    brand_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+class UpdateConnectionRequest(BaseModel):
+    brand_id: Optional[str] = None
 
 
 class PlatformInfo(BaseModel):
@@ -259,6 +263,45 @@ async def disconnect_account(
     return {"message": f"Disconnected {conn.platform.value} account", "id": connection_id}
 
 
+@router.put("/connections/{connection_id}", response_model=SocialConnectionResponse)
+async def update_connection(
+    connection_id: str,
+    request: UpdateConnectionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update connection settings (e.g. associate with a specific brand)."""
+    try:
+        conn_uuid = UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection ID")
+
+    result = await db.execute(
+        select(SocialConnection).where(
+            SocialConnection.id == conn_uuid,
+            SocialConnection.user_id == user.id,
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    if request.brand_id is not None:
+        if request.brand_id == "":
+            conn.brand_id = None
+        else:
+            try:
+                conn.brand_id = UUID(request.brand_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid brand ID")
+
+    conn.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(conn)
+
+    return _to_response(conn)
+
+
 @router.delete("/connections/{connection_id}/permanent")
 async def permanently_delete_connection(
     connection_id: str,
@@ -335,4 +378,5 @@ def _to_response(conn: SocialConnection) -> SocialConnectionResponse:
         connected_at=conn.connected_at,
         last_used_at=conn.last_used_at,
         last_error=conn.last_error,
+        brand_id=str(conn.brand_id) if conn.brand_id else None,
     )

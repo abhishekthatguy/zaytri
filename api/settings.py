@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -16,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import get_current_user
 from auth.models import User
 from db.database import get_db
-from db.settings_models import UserSettings, PlatformCredential, GoogleDriveConfig
+from db.settings_models import UserSettings, PlatformCredential, GoogleDriveConfig, BrandSettings, KnowledgeSource
 from db.models import Platform
 from utils.crypto import encrypt_dict, decrypt_dict, mask_value
+from utils.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,52 @@ class GoogleDriveResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ─── Brand Settings ──────────────────────────────────────────────────────────
+
+class BrandSettingsRequest(BaseModel):
+    brand_name: str = Field(..., max_length=255)
+    target_audience: Optional[str] = None
+    brand_tone: Optional[str] = Field("professional", max_length=255)
+    brand_guidelines: Optional[str] = None
+    core_values: Optional[str] = None
+
+
+class BrandSettingsResponse(BaseModel):
+    id: Any  # UUID
+    brand_name: str
+    target_audience: Optional[str] = None
+    brand_tone: Optional[str] = None
+    brand_guidelines: Optional[str] = None
+    core_values: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Knowledge Source ────────────────────────────────────────────────────────
+
+class KnowledgeSourceRequest(BaseModel):
+    brand_id: Optional[UUID] = None
+    source_type: str = Field(..., max_length=50) # website, pdf, drive, doc
+    name: str = Field(..., max_length=255)
+    url: Optional[str] = Field(None, max_length=500)
+    content_summary: Optional[str] = None
+    is_active: bool = True
+
+class KnowledgeSourceResponse(BaseModel):
+    id: UUID
+    brand_id: Optional[UUID] = None
+    source_type: str
+    name: str
+    url: Optional[str] = None
+    content_summary: Optional[str] = None
+    is_active: bool
+    last_indexed_at: Optional[datetime] = None
+    vector_count: int = 0
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Cron Settings Endpoints
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -138,7 +186,7 @@ async def update_cron_settings(
         settings_row.analytics_hour = request.analytics_hour
         settings_row.analytics_minute = request.analytics_minute
         settings_row.timezone = request.timezone
-        settings_row.updated_at = datetime.utcnow()
+        settings_row.updated_at = utc_now()
     else:
         settings_row = UserSettings(
             user_id=user.id,
@@ -273,7 +321,7 @@ async def save_platform_credential(
     if cred:
         cred.encrypted_credentials = encrypted
         cred.is_active = request.is_active
-        cred.updated_at = datetime.utcnow()
+        cred.updated_at = utc_now()
     else:
         cred = PlatformCredential(
             user_id=user.id,
@@ -343,7 +391,7 @@ async def test_platform_credential(
         return {"status": "not_configured", "message": "No credentials saved for this platform"}
 
     # Update test timestamp
-    cred.last_tested_at = datetime.utcnow()
+    cred.last_tested_at = utc_now()
 
     try:
         decrypted = decrypt_dict(cred.encrypted_credentials)
@@ -485,7 +533,7 @@ async def update_google_drive_config(
         config.is_connected = True
         if encrypted_tokens:
             config.encrypted_tokens = encrypted_tokens
-        config.updated_at = datetime.utcnow()
+        config.updated_at = utc_now()
     else:
         config = GoogleDriveConfig(
             user_id=user.id,
@@ -524,3 +572,195 @@ async def delete_google_drive_config(
 
     await db.delete(config)
     return {"status": "success", "message": "Google Drive disconnected"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Brand Settings Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/brands", response_model=List[BrandSettingsResponse])
+async def list_brands(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List all registered brands for the user."""
+    result = await db.execute(
+        select(BrandSettings).where(BrandSettings.user_id == user.id)
+    )
+    return result.scalars().all()
+
+
+@router.post("/brands", response_model=BrandSettingsResponse)
+async def create_brand(
+    request: BrandSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Register a new brand identity."""
+    # Check if brand name already exists for this user
+    existing = await db.execute(
+        select(BrandSettings).where(
+            BrandSettings.user_id == user.id,
+            BrandSettings.brand_name == request.brand_name
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Brand '{request.brand_name}' already exists")
+
+    brand = BrandSettings(
+        user_id=user.id,
+        brand_name=request.brand_name,
+        target_audience=request.target_audience,
+        brand_tone=request.brand_tone,
+        brand_guidelines=request.brand_guidelines,
+        core_values=request.core_values,
+    )
+    db.add(brand)
+    await db.flush()
+    await db.refresh(brand)
+    return brand
+
+
+@router.put("/brands/{brand_id}", response_model=BrandSettingsResponse)
+async def update_brand(
+    brand_id: str,
+    request: BrandSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update an existing brand identity."""
+    result = await db.execute(
+        select(BrandSettings).where(
+            BrandSettings.user_id == user.id,
+            BrandSettings.id == brand_id
+        )
+    )
+    brand = result.scalar_one_or_none()
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    brand.brand_name = request.brand_name
+    brand.target_audience = request.target_audience
+    brand.brand_tone = request.brand_tone
+    brand.brand_guidelines = request.brand_guidelines
+    brand.core_values = request.core_values
+    brand.updated_at = utc_now()
+
+    await db.flush()
+    await db.refresh(brand)
+    return brand
+
+
+@router.delete("/brands/{brand_id}")
+async def delete_brand(
+    brand_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Remove a brand identity."""
+    result = await db.execute(
+        select(BrandSettings).where(
+            BrandSettings.user_id == user.id,
+            BrandSettings.id == brand_id
+        )
+    )
+    brand = result.scalar_one_or_none()
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    await db.delete(brand)
+    return {"status": "success", "message": "Brand deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Knowledge Source Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/knowledge", response_model=List[KnowledgeSourceResponse])
+async def list_knowledge_sources(
+    brand_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List all knowledge sources for the user, optionally filtered by brand."""
+    query = select(KnowledgeSource).where(KnowledgeSource.user_id == user.id)
+    if brand_id:
+        query = query.where(KnowledgeSource.brand_id == brand_id)
+    
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.post("/knowledge", response_model=KnowledgeSourceResponse)
+async def create_knowledge_source(
+    request: KnowledgeSourceRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Add a new knowledge source."""
+    source = KnowledgeSource(
+        user_id=user.id,
+        brand_id=request.brand_id,
+        source_type=request.source_type,
+        name=request.name,
+        url=request.url,
+        content_summary=request.content_summary,
+        is_active=request.is_active,
+    )
+    db.add(source)
+    await db.flush()
+    await db.refresh(source)
+    return source
+
+
+@router.put("/knowledge/{source_id}", response_model=KnowledgeSourceResponse)
+async def update_knowledge_source(
+    source_id: UUID,
+    request: KnowledgeSourceRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update an existing knowledge source."""
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.user_id == user.id,
+            KnowledgeSource.id == source_id
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Knowledge source not found")
+
+    source.brand_id = request.brand_id
+    source.source_type = request.source_type
+    source.name = request.name
+    source.url = request.url
+    source.content_summary = request.content_summary
+    source.is_active = request.is_active
+    source.updated_at = utc_now()
+
+    await db.flush()
+    await db.refresh(source)
+    return source
+
+
+@router.delete("/knowledge/{source_id}")
+async def delete_knowledge_source(
+    source_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Remove a knowledge source."""
+    result = await db.execute(
+        select(KnowledgeSource).where(
+            KnowledgeSource.user_id == user.id,
+            KnowledgeSource.id == source_id
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Knowledge source not found")
+
+    await db.delete(source)
+    await db.flush()
+    return {"status": "success", "message": "Knowledge source deleted"}

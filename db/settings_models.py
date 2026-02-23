@@ -7,11 +7,21 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Text, Integer, Float, Boolean,
-    DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint,
+    DateTime, ForeignKey, Enum as SAEnum, UniqueConstraint, JSON,
 )
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from db.database import Base
 from db.base_enums import Platform
+
+import os
+try:
+    if os.getenv("ZAYTRI_DISABLE_VECTOR", "false").lower() == "true":
+        Vector = None
+    else:
+        from pgvector.sqlalchemy import Vector
+except ImportError:
+    Vector = None  # pgvector not installed — fallback to text-based similarity
 
 
 # ─── User Settings (Cron Schedules) ─────────────────────────────────────────
@@ -56,6 +66,9 @@ class BrandSettings(Base):
     brand_guidelines = Column(Text, nullable=True) # Rules, 'do not say' etc
     core_values = Column(Text, nullable=True)
     
+    # Relationships
+    social_connections = relationship("SocialConnection", back_populates="brand")
+
     # Allows multi-tenant isolation per brand
     __table_args__ = (
         UniqueConstraint("user_id", "brand_name", name="uq_user_brand"),
@@ -159,3 +172,57 @@ class ChatMessage(Base):
     token_cost = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class KnowledgeSource(Base):
+    """Knowledge sources for RAG (Websites, PDFs, etc)."""
+    __tablename__ = "knowledge_sources"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brand_settings.id"), nullable=True) # Optional link to brand
+    
+    source_type = Column(String(50), nullable=False) # website, pdf, drive, doc
+    name = Column(String(255), nullable=False)
+    url = Column(String(500), nullable=True)
+    content_summary = Column(Text, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    last_indexed_at = Column(DateTime, nullable=True)
+    vector_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ─── Document Embeddings (pgvector RAG) ────────────────────────────────────
+
+class DocumentEmbedding(Base):
+    """Vector embeddings for RAG retrieval using pgvector."""
+    __tablename__ = "document_embeddings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brand_settings.id"), nullable=False, index=True)
+    knowledge_source_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_sources.id"), nullable=True)
+
+    # Content
+    chunk_text = Column(Text, nullable=False)
+    chunk_index = Column(Integer, default=0)  # Position within source document
+    content_hash = Column(String(32), nullable=False)  # For deduplication
+    source_name = Column(String(255), nullable=False)
+    source_type = Column(String(50), nullable=False)  # knowledge_source, brand_config, etc.
+
+    # Vector embedding (1536 dimensions for text-embedding-3-small, 768 for Ollama)
+    embedding_dimension = Column(Integer, nullable=False, default=1536)
+    # pgvector column — stores the actual vector for similarity search
+    embedding = Column(Vector(1536), nullable=True) if Vector else None
+
+    # Metadata
+    metadata_json = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("brand_id", "content_hash", name="uq_brand_content_hash"),
+    )
+
