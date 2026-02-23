@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 interface ContentCardProps {
     id: string;
@@ -13,10 +14,12 @@ interface ContentCardProps {
     status: string;
     score: number | null;
     createdAt: string;
+    deletedAt?: string;
     onApprove?: (id: string) => void;
     onReject?: (id: string) => void;
     onEdit?: (id: string, data: Record<string, string>) => void;
     onPublishNow?: (id: string) => void;
+    onDelete?: (id: string) => void;
 }
 
 const PLATFORM_ICONS: Record<string, string> = {
@@ -28,7 +31,7 @@ const PLATFORM_ICONS: Record<string, string> = {
 
 export default function ContentCard({
     id, topic, platform, caption, hook, post_text, improved_text,
-    status, score, createdAt, onApprove, onReject, onEdit, onPublishNow,
+    status, score, createdAt, deletedAt, onApprove, onReject, onEdit, onPublishNow, onDelete,
 }: ContentCardProps) {
     const [editing, setEditing] = useState(false);
     const [editCaption, setEditCaption] = useState(caption);
@@ -91,10 +94,18 @@ export default function ContentCard({
                     </p>
                 )}
 
-                {/* Caption Preview */}
-                <p className="text-xs mb-4 line-clamp-3" style={{ color: "var(--zaytri-text-dim)" }}>
-                    {caption}
-                </p>
+                {/* Caption Preview with Markdown support */}
+                <div className="text-xs mb-4 line-clamp-3 overflow-hidden prose prose-invert max-w-none" style={{ color: "var(--zaytri-text-dim)" }}>
+                    <ReactMarkdown>{caption}</ReactMarkdown>
+                </div>
+
+                {/* Trash Timer for Deleted status */}
+                {status === "deleted" && deletedAt && (
+                    <div className="mb-4 p-2 rounded-lg text-[10px] font-bold uppercase tracking-wider text-center"
+                        style={{ background: "rgba(244, 63, 94, 0.1)", color: "#fb7185", border: "1px solid rgba(244, 63, 94, 0.2)" }}>
+                        🗑️ Moving to trash in {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(deletedAt).getTime()) / (1000 * 60 * 60 * 24)))} days
+                    </div>
+                )}
 
                 {/* Footer */}
                 <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--zaytri-border)" }}>
@@ -114,6 +125,22 @@ export default function ContentCard({
 
                     {/* Actions */}
                     <div className="flex gap-2 flex-wrap justify-end">
+                        {/* Delete button for failed content or any content the user wants to trash */}
+                        {onDelete && status !== "deleted" && status !== "published" && (
+                            <button
+                                onClick={() => onDelete(id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 cursor-pointer"
+                                title="Move to trash"
+                                style={{
+                                    background: "rgba(244, 63, 94, 0.1)",
+                                    color: "#fb7185",
+                                    border: "1px solid rgba(244, 63, 94, 0.2)",
+                                }}
+                            >
+                                🗑️ Delete
+                            </button>
+                        )}
+
                         {/* Edit button for draft/reviewed */}
                         {isEditable && onEdit && (
                             <button
@@ -216,15 +243,20 @@ export default function ContentCard({
                             </div>
                             <div>
                                 <label className="text-xs font-medium mb-1 block" style={{ color: "var(--zaytri-text-dim)" }}>
-                                    Caption
+                                    Caption (Markdown Supported)
                                 </label>
-                                <textarea
-                                    className="input-field"
-                                    rows={3}
-                                    value={editCaption}
-                                    onChange={(e) => setEditCaption(e.target.value)}
-                                    style={{ resize: "vertical" }}
-                                />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <textarea
+                                        className="input-field"
+                                        rows={6}
+                                        value={editCaption}
+                                        onChange={(e) => setEditCaption(e.target.value)}
+                                        style={{ resize: "vertical" }}
+                                    />
+                                    <div className="input-field overflow-auto bg-black/20 prose prose-invert prose-xs p-3" style={{ maxHeight: "200px" }}>
+                                        <ReactMarkdown>{editCaption || "*Preview*"}</ReactMarkdown>
+                                    </div>
+                                </div>
                             </div>
                             <div>
                                 <label className="text-xs font-medium mb-1 block" style={{ color: "var(--zaytri-text-dim)" }}>

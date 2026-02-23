@@ -26,12 +26,30 @@ class ContentCreatorAgent(BaseAgent):
         topic = input_data["topic"]
         platform = input_data["platform"]
         tone = input_data.get("tone", "professional")
+        user_id = input_data.get("user_id")
+        brand = input_data.get("brand")
+
+        # Compile Multi-tenant Brand RAG Context if user_id is provided
+        rag_context = ""
+        if user_id:
+            from brain.rag import BrandResolverRAG
+            rag = BrandResolverRAG(user_id=user_id)
+            rag_context = await rag.build_context(
+                topic=topic, 
+                platform=platform, 
+                assigned_tone=tone, 
+                assigned_brand=brand
+            )
 
         prompt = CONTENT_CREATOR_PROMPT.format(
             topic=topic,
             platform=platform,
             tone=tone,
         )
+
+        # Inject RAG Context to prevent hallucinations and enforce brand identity
+        if rag_context:
+            prompt = prompt + f"\n\n{rag_context}"
 
         try:
             result = await get_llm("content_creator").generate_json(

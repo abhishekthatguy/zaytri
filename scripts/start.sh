@@ -99,12 +99,52 @@ if [[ "$FLUSH_REDIS" == "true" || "$1" == "--flush-redis" ]]; then
     echo ""
 fi
 
+# ─── Dependency Checks ──────────────────────────────────────────────────────
+log_info "Checking local dependencies..."
+
+# Check Redis
+if command -v redis-cli &>/dev/null; then
+    if ! redis-cli -p "${REDIS_PORT}" ping &>/dev/null; then
+        log_warn "Redis is not running on port ${REDIS_PORT}. Some features may fail."
+    else
+        log_ok "  ✓ Redis is running"
+    fi
+else
+    log_warn "  ⚠ redis-cli not found. Cannot verify Redis status."
+fi
+
+# Check PostgreSQL
+if command -v pg_isready &>/dev/null; then
+    if ! pg_isready -p "${POSTGRES_PORT}" &>/dev/null; then
+        log_warn "PostgreSQL is not responding on port ${POSTGRES_PORT}. Database features may fail."
+    else
+        log_ok "  ✓ PostgreSQL is running"
+    fi
+else
+    # Fallback to lsof check
+    if ! lsof -i :${POSTGRES_PORT} -t &>/dev/null; then
+        log_warn "  ⚠ Port ${POSTGRES_PORT} (Postgres) appears to be closed."
+    fi
+fi
+
+# Check Ollama (Native)
+if curl -sf "http://localhost:${OLLAMA_PORT}/api/tags" &>/dev/null; then
+    log_ok "  ✓ Ollama is running natively"
+else
+    log_warn "  ⚠ Ollama not detected on port ${OLLAMA_PORT}."
+    log_warn "    Run 'ollama serve' if you have it installed natively."
+fi
+
+echo ""
+
 # ─── Trap to cleanup background processes ────────────────────────────────────
 cleanup() {
     echo ""
     log_info "Shutting down all services..."
-    kill $BACKEND_PID $CELERY_PID $BEAT_PID $FRONTEND_PID 2>/dev/null
-    wait $BACKEND_PID $CELERY_PID $BEAT_PID $FRONTEND_PID 2>/dev/null
+    [ -n "$BACKEND_PID" ] && kill $BACKEND_PID 2>/dev/null
+    [ -n "$CELERY_PID" ] && kill $CELERY_PID 2>/dev/null
+    [ -n "$BEAT_PID" ] && kill $BEAT_PID 2>/dev/null
+    [ -n "$FRONTEND_PID" ] && kill $FRONTEND_PID 2>/dev/null
     log_ok "All services stopped."
     exit 0
 }
@@ -119,17 +159,17 @@ fi
 
 # ─── Start Backend (FastAPI) ─────────────────────────────────────────────────
 log_info "Starting FastAPI backend on :${BACKEND_PORT}..."
-$PYTHON_BIN -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" --reload &
+$PYTHON_BIN -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" --log-level warning &
 BACKEND_PID=$!
 
 # ─── Start Celery Worker ─────────────────────────────────────────────────────
 log_info "Starting Celery worker..."
-$PYTHON_BIN -m celery -A celery_app worker --loglevel=info --concurrency=2 -Q pipeline,scheduler,publisher,engagement,analytics &
+$PYTHON_BIN -m celery -A celery_app worker --loglevel=error --concurrency=2 -Q pipeline,scheduler,publisher,engagement,analytics &
 CELERY_PID=$!
 
 # ─── Start Celery Beat ───────────────────────────────────────────────────────
 log_info "Starting Celery Beat..."
-$PYTHON_BIN -m celery -A celery_app beat --loglevel=info &
+$PYTHON_BIN -m celery -A celery_app beat --loglevel=error &
 BEAT_PID=$!
 
 # ─── Start Frontend (Next.js) ────────────────────────────────────────────────
@@ -137,20 +177,51 @@ log_info "Starting Next.js frontend on :${FRONTEND_PORT}..."
 cd frontend && \
     NEXT_PUBLIC_API_URL="http://localhost:${BACKEND_PORT}" \
     PORT="${FRONTEND_PORT}" \
-    npm run dev -- -p "${FRONTEND_PORT}" &
+    npm run dev -- -p "${FRONTEND_PORT}" &>/dev/null &
 FRONTEND_PID=$!
 cd "$PROJECT_ROOT"
 
+# ─── Health Verification ─────────────────────────────────────────────────────
 echo ""
-log_ok "All services started!"
+log_info "Verifying service startup..."
+sleep 5
+
+check_service() {
+    local pid=$1
+    local name=$2
+    if kill -0 "$pid" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+FAILED=false
+if ! check_service $BACKEND_PID "Backend";    then log_error "  ✗ Backend failed to start"; FAILED=true; else log_ok "  ✓ Backend is running (PID: $BACKEND_PID)"; fi
+if ! check_service $CELERY_PID  "Worker";     then log_error "  ✗ Celery worker failed to start"; FAILED=true; else log_ok "  ✓ Celery worker is running"; fi
+if ! check_service $FRONTEND_PID "Frontend";  then log_error "  ✗ Frontend failed to start"; FAILED=true; else log_ok "  ✓ Frontend is running"; fi
+
+if [ "$FAILED" = true ]; then
+    echo ""
+    log_error "One or more services failed to start correctly."
+    log_info "Check the logs or try running services manually to see errors."
+    # We don't exit here to let the user see which ones are up, but we've warned them.
+fi
+
+echo ""
+log_ok "Startup sequence complete!"
 echo ""
 log_info "Access Zaytri:"
-echo "  🌐 Frontend:     http://localhost:${FRONTEND_PORT}"
-echo "  🔧 Backend API:  http://localhost:${BACKEND_PORT}"
-echo "  📚 API Docs:     http://localhost:${BACKEND_PORT}/docs"
+echo -e "  🌐 Frontend:     ${BOLD}http://localhost:${FRONTEND_PORT}${NC}"
+echo -e "  🔧 Backend API:  ${BOLD}http://localhost:${BACKEND_PORT}${NC}"
+echo -e "  📚 API Docs:     ${BOLD}http://localhost:${BACKEND_PORT}/docs${NC}"
 echo ""
-log_info "Ollama tip: Run 'OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve' in another terminal"
 log_info "Press Ctrl+C to stop all services"
 
-# Wait for any process to exit
-wait
+# Keep the script running and monitor processes
+while true; do
+    if ! kill -0 $BACKEND_PID 2>/dev/null; then log_error "Backend process died!"; cleanup; fi
+    if ! kill -0 $CELERY_PID 2>/dev/null;  then log_error "Celery worker died!"; cleanup; fi
+    if ! kill -0 $FRONTEND_PID 2>/dev/null; then log_error "Frontend process died!"; cleanup; fi
+    sleep 10
+done

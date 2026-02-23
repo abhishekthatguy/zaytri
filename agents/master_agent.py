@@ -22,6 +22,7 @@ from brain.llm_router import get_llm
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Identity & Knowledge Base
@@ -268,8 +269,9 @@ User: "मुझे बताओ कि तुम क्या कर सकत�
 class ActionExecutor:
     """Executes classified intents by calling the appropriate system APIs."""
 
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, session: Optional[AsyncSession] = None):
         self.user_id = user_id
+        self.session = session
 
     async def execute(self, intent: str, params: dict) -> dict:
         """Route intent to the correct handler."""
@@ -304,26 +306,55 @@ class ActionExecutor:
         from sqlalchemy import select
         from utils.crypto import encrypt_value
         from brain.llm_router import llm_router
+        from datetime import datetime
 
-        async with async_session() as session:
+        # Use shared session if available, else create new one
+        if self.session:
+            session = self.session
             result = await session.execute(
                 select(LLMProviderConfig).where(LLMProviderConfig.provider == provider)
             )
             cfg = result.scalar_one_or_none()
+            
             encrypted = encrypt_value(api_key)
-
             if cfg:
                 cfg.api_key_encrypted = encrypted
+                cfg.test_status = "untested"
                 cfg.updated_at = datetime.utcnow()
             else:
-                cfg = LLMProviderConfig(
-                    provider=provider, api_key_encrypted=encrypted, is_enabled=True
+                new_cfg = LLMProviderConfig(
+                    provider=provider,
+                    api_key_encrypted=encrypted,
+                    test_status="untested",
                 )
-                session.add(cfg)
+                session.add(new_cfg)
             await session.commit()
+        else:
+            async with async_session() as session:
+                result = await session.execute(
+                    select(LLMProviderConfig).where(LLMProviderConfig.provider == provider)
+                )
+                cfg = result.scalar_one_or_none()
+                
+                encrypted = encrypt_value(api_key)
+                if cfg:
+                    cfg.api_key_encrypted = encrypted
+                    cfg.test_status = "untested"
+                    cfg.updated_at = datetime.utcnow()
+                else:
+                    new_cfg = LLMProviderConfig(
+                        provider=provider,
+                        api_key_encrypted=encrypted,
+                        test_status="untested",
+                    )
+                    session.add(new_cfg)
+                await session.commit()
 
-        llm_router.invalidate_cache()
-        return {"success": True, "message": f"{provider} API key saved"}
+        # Clear router cache
+        if hasattr(llm_router, "clear_cache"):
+            llm_router.clear_cache()
+
+        return {"success": True, "message": f"API Key for {provider} saved 🔑"}
 
     async def _handle_delete_llm_key(self, params: dict) -> dict:
         provider = params.get("provider", "").lower()
@@ -450,6 +481,7 @@ class ActionExecutor:
         topic = params.get("topic", "")
         platform = params.get("platform", "instagram").lower()
         tone = params.get("tone", "professional").lower()
+        brand = params.get("brand")
 
         if not topic:
             return {"success": False, "message": "Topic is required"}
@@ -457,7 +489,7 @@ class ActionExecutor:
         from workflow.pipeline import ContentPipeline
         pipeline = ContentPipeline()
         result = await pipeline.run(
-            topic=topic, platform=platform, tone=tone, user_id=self.user_id
+            topic=topic, platform=platform, tone=tone, user_id=self.user_id, brand=brand
         )
         return {
             "success": True,

@@ -12,6 +12,8 @@ from brain.providers.openai_provider import OpenAIProvider
 from brain.providers.gemini_provider import GeminiProvider
 from brain.providers.anthropic_provider import AnthropicProvider
 from brain.providers.groq_provider import GroqProvider
+from brain.providers.openrouter_provider import OpenRouterProvider
+from brain.providers.load_balancer import LoadBalancerProvider
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ PROVIDER_MODELS: Dict[str, list] = {
     "gemini": ["gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
     "anthropic": ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-3-20240307"],
     "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+    "openrouter": ["google/gemini-2.0-flash-001", "anthropic/claude-3.5-sonnet", "openai/gpt-4o"],
 }
 
 
@@ -62,6 +65,13 @@ def create_provider(
         if not api_key:
             raise ValueError("Groq API key is required")
         return GroqProvider(api_key=api_key, model=model)
+    elif provider_name == "openrouter":
+        if not api_key:
+            from config import settings
+            api_key = settings.open_router_api_key
+        if not api_key:
+            raise ValueError("OpenRouter API key is required")
+        return OpenRouterProvider(api_key=api_key, model=model)
     else:
         raise ValueError(f"Unknown provider: {provider_name}")
 
@@ -69,6 +79,7 @@ def create_provider(
 class LLMRouter:
     """
     Routes LLM requests to the correct provider based on agent configuration.
+    Implements a fallback-enabled default provider using a LoadBalancer.
 
     Usage:
         router = LLMRouter()
@@ -80,19 +91,50 @@ class LLMRouter:
         self._cache: Dict[str, BaseLLMProvider] = {}
 
     def get_default_provider(self) -> BaseLLMProvider:
-        """Get the default Ollama provider."""
+        """
+        Get the default balanced provider.
+        Primary: OpenRouter
+        Fallbacks: Ollama (llama3.2, deepseek, mistral)
+        """
         if "_default" not in self._cache:
             from config import settings
-            self._cache["_default"] = OllamaProvider(
-                host=settings.ollama_host,
-                model=settings.ollama_model,
+            
+            providers = []
+            
+            # 1. Primary: OpenRouter
+            if settings.open_router_api_key:
+                providers.append(
+                    OpenRouterProvider(
+                        api_key=settings.open_router_api_key,
+                        model="google/gemini-2.0-flash-001" # Fast & Cheap primary
+                    )
+                )
+            
+            # 2. Fallbacks: Ollama
+            for fallback_model in ["llama3.2:latest", "deepseek-r1:latest", "mistral:latest"]:
+                providers.append(
+                    OllamaProvider(
+                        host=settings.ollama_host,
+                        model=fallback_model
+                    )
+                )
+            
+            if not providers:
+                # Absolute fallback if nothing is configured
+                providers.append(OllamaProvider(host=settings.ollama_host, model=settings.ollama_model))
+
+            self._cache["_default"] = LoadBalancerProvider(
+                providers=providers,
+                requests_per_minute=20, # Safe default for OpenRouter free tier / Local Ollama
+                max_retries=1
             )
+            
         return self._cache["_default"]
 
     def get_provider(self, agent_id: str) -> BaseLLMProvider:
         """
         Get the LLM provider for a specific agent.
-        Returns the configured override, or falls back to default Ollama.
+        Returns the configured override, or falls back to default Balanced Provider.
         """
         if agent_id in self._cache:
             return self._cache[agent_id]
@@ -145,11 +187,15 @@ class LLMRouter:
                     )
                 ).scalar_one_or_none()
 
-                if not provider_cfg or not provider_cfg.api_key_encrypted:
+                if not provider_cfg or (provider_name != "openrouter" and not provider_cfg.api_key_encrypted):
+                    # For OpenRouter, we can fall back to settings.open_router_api_key if not in DB
+                    if provider_name == "openrouter" and settings.open_router_api_key:
+                        return OpenRouterProvider(api_key=settings.open_router_api_key, model=model)
+                    
                     logger.warning(f"No API key for provider {provider_name}")
                     return None
 
-                api_key = decrypt_value(provider_cfg.api_key_encrypted)
+                api_key = decrypt_value(provider_cfg.api_key_encrypted) if provider_cfg.api_key_encrypted else settings.open_router_api_key
                 return create_provider(provider_name, model, api_key=api_key)
 
             engine.dispose()

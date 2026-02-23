@@ -36,6 +36,7 @@ class ContentPipeline:
         platform: str,
         tone: str = "professional",
         user_id: Optional[str] = None,
+        brand: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute the full content creation pipeline.
@@ -45,11 +46,12 @@ class ContentPipeline:
             platform: Target social media platform
             tone: Content tone (e.g., professional, casual, educational)
             user_id: ID of the user who triggered the workflow
+            brand: Optional brand namespace for RAG isolation
 
         Returns:
             Complete pipeline results with content, hashtags, and review
         """
-        logger.info(f"Starting pipeline: topic='{topic}', platform='{platform}', tone='{tone}'")
+        logger.info(f"Starting pipeline: topic='{topic}', platform='{platform}', tone='{tone}', brand='{brand}'")
 
         # ── Step 1: Generate Content ────────────────────────────────────
         logger.info("Step 1/3: Running Content Creator Agent...")
@@ -57,6 +59,8 @@ class ContentPipeline:
             "topic": topic,
             "platform": platform,
             "tone": tone,
+            "user_id": user_id,
+            "brand": brand,
         })
 
         # ── Step 2: Generate Hashtags ───────────────────────────────────

@@ -12,37 +12,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
+from db.base_enums import ContentStatus, Platform, PublishMode
 import enum
-
-
-# ─── Enums ───────────────────────────────────────────────────────────────────
-
-class ContentStatus(str, enum.Enum):
-    DRAFT = "draft"
-    REVIEWED = "reviewed"
-    APPROVED = "approved"
-    SCHEDULED = "scheduled"
-    PUBLISHED = "published"
-    FAILED = "failed"
-
-
-class Platform(str, enum.Enum):
-    INSTAGRAM = "instagram"
-    FACEBOOK = "facebook"
-    TWITTER = "twitter"
-    YOUTUBE = "youtube"
-    LINKEDIN = "linkedin"
-    REDDIT = "reddit"
-    MEDIUM = "medium"
-    BLOGGER = "blogger"
-    GMAIL = "gmail"
-
-
-class PublishMode(str, enum.Enum):
-    """How content gets published: manually by user, scheduled, or via AI agent."""
-    MANUAL = "manual"          # User clicks "Publish Now"
-    SCHEDULED = "scheduled"    # User sets a date/time
-    AI_AGENT = "ai_agent"      # AI agent decides when to publish
 
 
 # ─── Content Model ──────────────────────────────────────────────────────────
@@ -81,12 +52,16 @@ class Content(Base):
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
     schedules = relationship("Schedule", back_populates="content", cascade="all, delete-orphan")
     analytics = relationship("AnalyticsRecord", back_populates="content", cascade="all, delete-orphan")
     engagements = relationship("EngagementLog", back_populates="content", cascade="all, delete-orphan")
     social_connection = relationship("SocialConnection", back_populates="contents")
+
+# Trigger SocialConnection discovery
+from db.social_connections import SocialConnection # noqa: F401
 
 
 # ─── Schedule Model ─────────────────────────────────────────────────────────

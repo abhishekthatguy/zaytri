@@ -371,7 +371,20 @@ if [ "$MODE" = "local" ]; then
     # Python virtual environment
     log "Setting up Python virtual environment (.venv)..."
     if [ ! -d ".venv" ]; then
-        python3 -m venv .venv || { log_err "Failed to create virtual environment. Ensure 'python3-venv' is installed."; exit 1; }
+        # Prefer stable python versions over dev/beta versions (like 3.14)
+        PYTHON_EXEC="python3"
+        for p in python3.13 python3.12 python3.11 python3; do
+            if command -v "$p" &>/dev/null; then
+                # Check version - don't use 3.14+ if older is available
+                ver=$($p -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+                if [[ "$ver" < "3.14" ]]; then
+                    PYTHON_EXEC="$p"
+                    break
+                fi
+            fi
+        done
+        log "Using $PYTHON_EXEC to create venv..."
+        $PYTHON_EXEC -m venv .venv || { log_err "Failed to create virtual environment. Ensure 'python3-venv' is installed."; exit 1; }
         log_ok "  ✓ Virtual environment created"
     else
         log_ok "  ✓ Virtual environment already exists"
@@ -414,8 +427,8 @@ chmod +x "$CLI_PATH" 2>/dev/null || true
 # Also make all scripts executable
 chmod +x "$INSTALL_DIR/scripts/"*.sh 2>/dev/null || true
 
-# Potential bind targets
-BIN_DIRS=("/usr/local/bin" "$HOME/.local/bin" "$HOME/bin")
+# Potential bind targets (prioritized for local/non-sudo use)
+BIN_DIRS=("$HOME/.local/bin" "$HOME/bin" "/usr/local/bin")
 LINK_TARGET=""
 
 for dir in "${BIN_DIRS[@]}"; do
@@ -432,32 +445,25 @@ if [ -z "$LINK_TARGET" ]; then
 fi
 
 if [ -n "$LINK_TARGET" ]; then
-    # Try to install without sudo first
-    if [ -w "$(dirname "$LINK_TARGET")" ]; then
+    # Try to install without sudo (standard local approach)
+    if [ -w "$(dirname "$LINK_TARGET")" ] || [ -w "$LINK_TARGET" 2>/dev/null ]; then
         ln -sf "$CLI_PATH" "$LINK_TARGET" 2>/dev/null && \
-            log_ok "  ✓ 'zaytri' command installed → ${LINK_TARGET}"
+            log_ok "  ✓ 'zaytri' command bound locally → ${LINK_TARGET}"
     else
-        # Needs sudo or manual action
-        show_security_warning
-        log "Attempting to auto-bind 'zaytri' to ${LINK_TARGET} (via sudo)..."
-        
-        # Check if we can run sudo (interactivity check is hard in pipes, but sudo handles it)
-        if sudo ln -sf "$CLI_PATH" "$LINK_TARGET"; then
-            log_ok "  ✓ 'zaytri' command installed → ${LINK_TARGET} (via sudo)"
-        else
-            echo ""
-            log_warn "  ⚠ Auto-bind failed or was skipped."
-            log_warn "  To bind 'zaytri' manually, run:"
-            echo -e "    ${BOLD}sudo ln -sf ${CLI_PATH} ${LINK_TARGET}${NC}"
-            echo ""
-            log_warn "  Alternatively, add this to your shell profile:"
-            echo -e "    ${BOLD}export PATH=\"${INSTALL_DIR}:\$PATH\"${NC}"
-        fi
+        # If it's a system path and we don't have write access, don't force sudo automatically
+        log_warn "  ⚠ Cannot write to ${LINK_TARGET} without elevated permissions."
+        log_warn "  To bind 'zaytri' to your system manually, run:"
+        echo -e "    ${BOLD}sudo ln -sf ${CLI_PATH} ${LINK_TARGET}${NC}"
+        echo ""
+        log_warn "  Alternatively, skip system binding and run directly from:"
+        echo -e "    ${BOLD}${CLI_PATH}${NC}"
+        echo ""
+        log_warn "  Or add Zaytri to your PATH in your shell profile (~/.bashrc or ~/.zshrc):"
+        echo -e "    ${BOLD}export PATH=\"${INSTALL_DIR}:\$PATH\"${NC}"
     fi
 else
     log_warn "  ⚠ No writable bin directory found."
-    log_warn "  Add this to your shell profile:"
-    echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+    log "  Run Zaytri directly using: ${CLI_PATH}"
 fi
 
 echo ""

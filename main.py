@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     import db.social_connections  # noqa: F401 — registers SocialConnection
     import db.whatsapp_approval   # noqa: F401 — registers WhatsAppApproval
     import db.calendar_models     # noqa: F401 — registers CalendarUpload, CalendarEntry
+    import db.task_models          # noqa: F401 — registers TaskExecution
 
     await init_db()
     logger.info("✅ Database initialized")
@@ -71,9 +72,15 @@ app = FastAPI(
 )
 
 # ─── CORS ────────────────────────────────────────────────────────────────────
+print(f"DEBUG: CORS Origins: {settings.cors_origins_list}")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://0.0.0.0:3000",
+        "http://localhost:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

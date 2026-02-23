@@ -81,9 +81,6 @@ export default function ChatWidget() {
         setIsDraggingOver,
     } = useChat();
 
-    // Hide widget only on the dedicated full-page chat page (it has its own UI)
-    if (pathname.startsWith("/chat")) return null;
-
     const [unreadCount, setUnreadCount] = useState(0);
     const [showModeMenu, setShowModeMenu] = useState(false);
 
@@ -200,6 +197,9 @@ export default function ChatWidget() {
     // Get current mode info
     const currentModeInfo = CHAT_MODES.find((m) => m.id === activeMode);
     const hasContent = input.trim() || attachedImages.length > 0;
+
+    // Hide widget only on the dedicated full-page chat page (it has its own UI)
+    if (pathname.startsWith("/chat")) return null;
 
     return (
         <>

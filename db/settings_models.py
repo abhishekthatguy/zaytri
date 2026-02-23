@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from db.database import Base
-from db.models import Platform
+from db.base_enums import Platform
 
 
 # ─── User Settings (Cron Schedules) ─────────────────────────────────────────
@@ -37,6 +37,29 @@ class UserSettings(Base):
 
     # Timezone
     timezone = Column(String(100), default="Asia/Kolkata")
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# ─── Brand Settings (RAG Memory) ─────────────────────────────────────────────
+
+class BrandSettings(Base):
+    """Brand identity, tone, and memory for RAG context."""
+    __tablename__ = "brand_settings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    
+    brand_name = Column(String(255), nullable=False)
+    target_audience = Column(Text, nullable=True)
+    brand_tone = Column(String(255), nullable=True, default="professional")
+    brand_guidelines = Column(Text, nullable=True) # Rules, 'do not say' etc
+    core_values = Column(Text, nullable=True)
+    
+    # Allows multi-tenant isolation per brand
+    __table_args__ = (
+        UniqueConstraint("user_id", "brand_name", name="uq_user_brand"),
+    )
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

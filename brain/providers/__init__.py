@@ -42,14 +42,23 @@ class BaseLLMProvider(ABC):
             json_mode=True,
         )
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                # If LLM returns a list (e.g. of hashtags), wrap it in a dict
+                # The callers usually expect a dict to call .get()
+                return {"data": parsed, "raw_list": parsed}
+            return parsed
         except json.JSONDecodeError:
             logger.warning(f"[{self.provider_name}] Failed to parse JSON, attempting extraction...")
             if "```json" in raw:
                 raw = raw.split("```json")[1].split("```")[0].strip()
             elif "```" in raw:
                 raw = raw.split("```")[1].split("```")[0].strip()
-            return json.loads(raw)
+            
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return {"data": parsed, "raw_list": parsed}
+            return parsed
 
     @abstractmethod
     async def health_check(self) -> bool:

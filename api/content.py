@@ -86,6 +86,7 @@ class ContentResponse(BaseModel):
     improved_text: Optional[str] = None
     status: str
     created_at: datetime
+    deleted_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -119,8 +120,12 @@ async def list_content(
     """List all generated content with optional filters."""
     query = select(Content).order_by(desc(Content.created_at))
 
+    # By default, exclude deleted content unless explicitly filtered
     if status_filter:
         query = query.where(Content.status == ContentStatus(status_filter))
+    else:
+        query = query.where(Content.status != ContentStatus.DELETED)
+
     if platform:
         query = query.where(Content.platform == platform)
 
@@ -129,6 +134,9 @@ async def list_content(
     count_query = select(func.count()).select_from(Content)
     if status_filter:
         count_query = count_query.where(Content.status == ContentStatus(status_filter))
+    else:
+        count_query = count_query.where(Content.status != ContentStatus.DELETED)
+
     if platform:
         count_query = count_query.where(Content.platform == platform)
 
@@ -330,13 +338,17 @@ async def delete_content(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Delete a content item."""
+    """Soft delete a content item."""
     result = await db.execute(select(Content).where(Content.id == content_id))
     content = result.scalar_one_or_none()
 
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
 
-    await db.delete(content)
-    return {"status": "success", "message": "Content deleted"}
+    content.status = ContentStatus.DELETED
+    content.deleted_at = datetime.utcnow()
+    content.updated_at = datetime.utcnow()
+    
+    await db.flush()
+    return {"status": "success", "message": "Content moved to trash"}
 

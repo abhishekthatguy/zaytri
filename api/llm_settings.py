@@ -49,16 +49,24 @@ async def list_providers(
     configs = {c.provider: c for c in result.scalars().all()}
 
     providers = []
+    from config import settings
     for provider, models in PROVIDER_MODELS.items():
         cfg = configs.get(provider)
+        
+        is_configured = (
+            provider == "ollama" or 
+            (cfg is not None and cfg.api_key_encrypted is not None) or
+            (provider == "openrouter" and bool(settings.open_router_api_key))
+        )
+        
         providers.append({
             "provider": provider,
             "models": models,
-            "is_configured": provider == "ollama" or (cfg is not None and cfg.api_key_encrypted is not None),
-            "is_enabled": cfg.is_enabled if cfg else (provider == "ollama"),
-            "test_status": cfg.test_status if cfg else ("connected" if provider == "ollama" else None),
+            "is_configured": is_configured,
+            "is_enabled": cfg.is_enabled if cfg else (provider == "ollama" or provider == "openrouter"),
+            "test_status": cfg.test_status if cfg else ("connected" if (provider == "ollama" or (provider == "openrouter" and settings.open_router_api_key)) else None),
             "last_tested_at": cfg.last_tested_at.isoformat() if cfg and cfg.last_tested_at else None,
-            "masked_key": mask_value(decrypt_value(cfg.api_key_encrypted)) if cfg and cfg.api_key_encrypted else None,
+            "masked_key": mask_value(decrypt_value(cfg.api_key_encrypted)) if cfg and cfg.api_key_encrypted else (mask_value(settings.open_router_api_key) if provider == "openrouter" and settings.open_router_api_key else None),
         })
 
     return providers

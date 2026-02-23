@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
-from db.models import Platform
+from db.base_enums import Platform
 
 
 class SocialConnection(Base):

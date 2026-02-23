@@ -835,6 +835,7 @@ const PROVIDER_META: Record<string, { icon: string; label: string; color: string
     gemini: { icon: "💎", label: "Google Gemini", color: "rgba(59, 130, 246, 0.3)", description: "Gemini 2.0 Flash, 2.5 Pro" },
     anthropic: { icon: "🧠", label: "Anthropic", color: "rgba(234, 179, 8, 0.3)", description: "Claude Sonnet, Opus" },
     groq: { icon: "⚡", label: "Groq", color: "rgba(239, 68, 68, 0.3)", description: "Ultra-fast inference" },
+    openrouter: { icon: "🚀", label: "OpenRouter", color: "rgba(255, 107, 0, 0.3)", description: "Access any LLM via one API" },
 };
 
 const AGENT_META: Record<string, { icon: string; label: string; description: string }> = {
@@ -852,6 +853,7 @@ const DEFAULT_PROVIDER_MODELS: Record<string, string[]> = {
     gemini: ["gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
     anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-3-20240307"],
     groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+    openrouter: ["google/gemini-2.0-flash-001", "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "deepseek/deepseek-chat"],
 };
 
 function AIModelsTab({ onToast }: { onToast: (msg: string, t: "success" | "error") => void }) {

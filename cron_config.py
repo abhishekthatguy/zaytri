@@ -52,4 +52,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": ANALYTICS_CRON,
         "options": {"queue": "analytics"},
     },
+    "cleanup-deleted-content-daily": {
+        "task": "agents.cleanup_agent.cleanup_deleted_content",
+        "schedule": crontab(hour=0, minute=0),  # Daily at midnight
+        "options": {"queue": "scheduler"},
+    },
 }

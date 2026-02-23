@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import ContentCard from "@/components/ContentCard";
-import { listContent, approveContent, rejectContent, editContent, publishNow } from "@/lib/api";
+import { listContent, approveContent, rejectContent, editContent, publishNow, deleteContent } from "@/lib/api";
 
 interface ContentItem {
     id: string;
@@ -15,6 +15,7 @@ interface ContentItem {
     status: string;
     review_score: number | null;
     created_at: string;
+    deleted_at?: string;
 }
 
 export default function ContentPage() {
@@ -88,7 +89,18 @@ export default function ContentPage() {
         }
     };
 
-    const FILTERS = ["", "draft", "reviewed", "approved", "published", "failed"];
+    const handleDelete = async (id: string) => {
+        if (!confirm("Move this content to trash?")) return;
+        try {
+            await deleteContent(id);
+            setSuccess("Content moved to trash 🗑️");
+            fetchContent();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to delete");
+        }
+    };
+
+    const FILTERS = ["", "draft", "reviewed", "approved", "published", "failed", "deleted"];
 
     return (
         <div className="animate-fade-in">
@@ -171,10 +183,12 @@ export default function ContentPage() {
                             status={item.status}
                             score={item.review_score}
                             createdAt={item.created_at}
+                            deletedAt={item.deleted_at}
                             onApprove={handleApprove}
                             onReject={handleReject}
                             onEdit={handleEdit}
                             onPublishNow={handlePublishNow}
+                            onDelete={handleDelete}
                         />
                     ))}
                 </div>

@@ -19,11 +19,13 @@ from auth.dependencies import get_current_user, get_optional_user
 from auth.models import User
 from db.database import get_db
 from db.settings_models import ChatMessage
-from agents.master_agent import MasterAgent
+from brain.llm_router import llm_router
+from orchestration.master_orchestrator import MasterOrchestrator
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-master_agent = MasterAgent()
+# Inject the default LLM provider info the V3 Orchestrator
+master_orchestrator = MasterOrchestrator(llm=llm_router.get_default_provider())
 
 GUEST_USER_ID = "guest"
 
@@ -83,9 +85,9 @@ async def send_chat_message(
         db.add(user_msg)
         await db.flush()
 
-    # Process through Master Agent
+    # Process through V3 Master Orchestrator
     try:
-        result = await master_agent.chat(
+        result = await master_orchestrator.chat(
             message=req.message,
             user_id=user_id,
             conversation_history=history,

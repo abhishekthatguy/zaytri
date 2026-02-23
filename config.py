@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     def is_youtube_configured(self) -> bool:
         return bool(self.youtube_api_key)
 
+    # ─── OpenRouter (External LLM) ─────────────────────────────────────────
+    open_router_api_key: str = ""
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
