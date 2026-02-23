@@ -61,14 +61,14 @@ function LandingNav() {
                         Sign In
                     </Link>
                     <Link
-                        href="/signup"
+                        href="/login"
                         className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:scale-105"
                         style={{
                             background: "linear-gradient(135deg, #06b6d4, #0891b2)",
                             boxShadow: "0 4px 20px rgba(6, 182, 212, 0.3)",
                         }}
                     >
-                        Get Started Free
+                        Explore Demo
                     </Link>
                 </div>
 
@@ -101,11 +101,11 @@ function LandingNav() {
                             Sign In
                         </Link>
                         <Link
-                            href="/signup"
+                            href="/login"
                             className="px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{ background: "linear-gradient(135deg, #06b6d4, #0891b2)" }}
                         >
-                            Get Started
+                            Explore Demo
                         </Link>
                     </div>
                 </div>
@@ -273,7 +273,7 @@ export default function LandingPage() {
                         }}
                     >
                         <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                        AI-Powered Social Media Automation
+                        AI Agent Architecture Showcase
                     </div>
 
                     <h1
@@ -284,9 +284,9 @@ export default function LandingPage() {
                             WebkitTextFillColor: "transparent",
                         }}
                     >
-                        Automate Your
+                        Explore AI Agent
                         <br />
-                        Social Media Empire
+                        Orchestration Patterns
                     </h1>
 
                     <p
@@ -299,14 +299,14 @@ export default function LandingPage() {
                     {/* CTA Buttons */}
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
                         <Link
-                            href="/signup"
+                            href="/dashboard"
                             className="px-8 py-4 rounded-2xl text-base font-bold text-white transition-all hover:scale-105 active:scale-95"
                             style={{
                                 background: "linear-gradient(135deg, #06b6d4, #0891b2)",
                                 boxShadow: "0 8px 30px rgba(6, 182, 212, 0.4)",
                             }}
                         >
-                            Start Free — No Credit Card
+                            Open Architecture Demo
                         </Link>
                         <Link
                             href="#features"
@@ -409,10 +409,10 @@ export default function LandingPage() {
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="text-center mb-16">
                         <h2 className="text-3xl md:text-4xl font-black mb-4">
-                            Everything You Need to <span style={{ color: "#06b6d4" }}>Dominate</span> Social Media
+                            Explore the <span style={{ color: "#06b6d4" }}>Architecture</span> Under the Hood
                         </h2>
                         <p className="text-lg max-w-xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-                            Enterprise-grade AI automation without the enterprise price tag
+                            Learn how complex multi-agent AI pipelines function in real-time
                         </p>
                     </div>
 
@@ -445,100 +445,7 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            {/* ═══ Pricing Section ═══ */}
-            <section
-                id="pricing"
-                className="py-24"
-                style={{
-                    background:
-                        "radial-gradient(ellipse 80% 50% at 50% 100%, rgba(6, 182, 212, 0.08), transparent)," +
-                        "#0a0a12",
-                }}
-            >
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-4xl font-black mb-4">
-                            Simple, <span style={{ color: "#06b6d4" }}>Transparent</span> Pricing
-                        </h2>
-                        <p className="text-lg max-w-xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-                            Start free, scale as you grow. No hidden fees.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                        {siteConfig.pricing.map((plan) => (
-                            <div
-                                key={plan.name}
-                                className="relative rounded-3xl p-8 transition-all duration-300 hover:-translate-y-2"
-                                style={{
-                                    background: plan.highlight
-                                        ? "linear-gradient(180deg, rgba(6, 182, 212, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)"
-                                        : "rgba(255,255,255,0.02)",
-                                    border: plan.highlight
-                                        ? "1px solid rgba(6, 182, 212, 0.3)"
-                                        : "1px solid rgba(255,255,255,0.06)",
-                                    boxShadow: plan.highlight
-                                        ? "0 20px 60px rgba(6, 182, 212, 0.15)"
-                                        : "none",
-                                }}
-                            >
-                                {plan.highlight && plan.badge && (
-                                    <div
-                                        className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-xs font-bold"
-                                        style={{
-                                            background: "linear-gradient(135deg, #06b6d4, #0891b2)",
-                                            color: "white",
-                                            boxShadow: "0 4px 15px rgba(6, 182, 212, 0.4)",
-                                        }}
-                                    >
-                                        {plan.badge}
-                                    </div>
-                                )}
-
-                                <h3 className="text-lg font-bold text-white mb-2">{plan.name}</h3>
-                                <p className="text-sm mb-6" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                    {plan.description}
-                                </p>
-
-                                <div className="flex items-baseline gap-1 mb-8">
-                                    <span className="text-4xl font-black text-white">{plan.price}</span>
-                                    <span className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                        {plan.period}
-                                    </span>
-                                </div>
-
-                                <ul className="space-y-3 mb-8">
-                                    {plan.features.map((feature) => (
-                                        <li
-                                            key={feature}
-                                            className="flex items-start gap-3 text-sm"
-                                            style={{ color: "rgba(255,255,255,0.7)" }}
-                                        >
-                                            <span className="text-green-400 flex-shrink-0 mt-0.5">✓</span>
-                                            {feature}
-                                        </li>
-                                    ))}
-                                </ul>
-
-                                <Link
-                                    href={plan.ctaLink}
-                                    className="block w-full text-center py-3.5 rounded-xl text-sm font-bold transition-all hover:scale-105"
-                                    style={{
-                                        background: plan.highlight
-                                            ? "linear-gradient(135deg, #06b6d4, #0891b2)"
-                                            : "rgba(255,255,255,0.06)",
-                                        border: plan.highlight ? "none" : "1px solid rgba(255,255,255,0.1)",
-                                        color: "white",
-                                        boxShadow: plan.highlight ? "0 4px 20px rgba(6, 182, 212, 0.3)" : "none",
-                                    }}
-                                >
-                                    {plan.cta}
-                                </Link>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
+            {/* ═══ Pricing Section Hidden for Demo ═══ */}
 
             {/* ═══ Testimonials ═══ */}
             <section className="py-24">
@@ -596,20 +503,20 @@ export default function LandingPage() {
                     }}
                 >
                     <h2 className="text-3xl md:text-4xl font-black mb-4 text-white">
-                        Ready to Automate Your Social Media?
+                        Ready to Explore the Code?
                     </h2>
                     <p className="text-lg mb-8" style={{ color: "rgba(255,255,255,0.6)" }}>
-                        Join thousands of creators who save hours every week with Zaytri.
+                        Dive into the mechanics of multi-agent LLM systems and build your own.
                     </p>
                     <Link
-                        href="/signup"
+                        href="/dashboard"
                         className="inline-block px-10 py-4 rounded-2xl text-base font-bold text-white transition-all hover:scale-105"
                         style={{
                             background: "linear-gradient(135deg, #06b6d4, #0891b2)",
                             boxShadow: "0 8px 30px rgba(6, 182, 212, 0.4)",
                         }}
                     >
-                        Get Started Free →
+                        Launch Dashboard →
                     </Link>
                 </div>
             </section>

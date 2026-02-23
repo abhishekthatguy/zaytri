@@ -3,7 +3,7 @@ Zaytri — LLM Settings API Routes
 Manage LLM providers, API keys, and per-agent model assignments.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from auth.models import User
 from db.database import get_db
 from db.settings_models import LLMProviderConfig, AgentModelConfig
 from utils.crypto import encrypt_value, decrypt_value, mask_value
+from utils.time import utc_now
 from brain.llm_router import PROVIDER_MODELS, AGENT_IDS, create_provider, llm_router
 
 router = APIRouter(prefix="/settings/llm", tags=["LLM Settings"])
@@ -95,7 +96,7 @@ async def save_provider_key(
 
     if cfg:
         cfg.api_key_encrypted = encrypted
-        cfg.updated_at = datetime.utcnow()
+        cfg.updated_at = utc_now()
     else:
         cfg = LLMProviderConfig(
             provider=req.provider,
@@ -168,7 +169,7 @@ async def test_provider(
             cfg = result.scalar_one_or_none()
             if cfg:
                 cfg.test_status = "connected" if healthy else "failed"
-                cfg.last_tested_at = datetime.utcnow()
+                cfg.last_tested_at = utc_now()
                 await db.commit()
 
         return {
@@ -240,7 +241,7 @@ async def assign_agent_model(
         agent_cfg.provider = req.provider
         agent_cfg.model = req.model
         agent_cfg.is_custom = True
-        agent_cfg.updated_at = datetime.utcnow()
+        agent_cfg.updated_at = utc_now()
     else:
         agent_cfg = AgentModelConfig(
             agent_id=req.agent_id,
@@ -278,7 +279,7 @@ async def reset_agent_model(
         agent_cfg.provider = "ollama"
         from config import settings
         agent_cfg.model = settings.ollama_model
-        agent_cfg.updated_at = datetime.utcnow()
+        agent_cfg.updated_at = utc_now()
         await db.commit()
 
     llm_router.invalidate_cache(req.agent_id)

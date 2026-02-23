@@ -422,6 +422,8 @@ export interface ChatMessage {
   content: string;
   intent?: string;
   created_at?: string;
+  model_used?: string;
+  token_cost?: number;
   image_data?: string[];  // base64-encoded images
 }
 
@@ -429,6 +431,8 @@ export interface ChatResponse {
   conversation_id: string;
   response: string;
   intent: string;
+  model_used?: string;
+  token_cost?: number;
   action_success: boolean;
   action_data?: Record<string, unknown>;
 }
@@ -442,13 +446,30 @@ export interface ConversationPreview {
 export async function sendChatMessage(
   message: string,
   conversation_id?: string,
-  images?: string[]
+  images?: string[],
+  options?: {
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+    exec_mode?: string;
+    context_controls?: {
+      brand_memory: boolean;
+      calendar_context: boolean;
+      past_posts: boolean;
+      engagement_data: boolean;
+    };
+  }
 ): Promise<ChatResponse> {
   return apiFetch("/chat", {
     method: "POST",
     body: JSON.stringify({
       message,
       conversation_id,
+      model: options?.model,
+      temperature: options?.temperature,
+      max_tokens: options?.max_tokens,
+      exec_mode: options?.exec_mode,
+      context_controls: options?.context_controls,
       ...(images && images.length > 0 ? { images } : {}),
     }),
   });
@@ -462,6 +483,19 @@ export async function getChatHistory(
 
 export async function listConversations(): Promise<ConversationPreview[]> {
   return apiFetch("/chat/conversations");
+}
+
+export async function deleteConversation(conversation_id: string): Promise<void> {
+  return apiFetch(`/chat/conversations/${conversation_id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function renameConversation(conversation_id: string, name: string): Promise<void> {
+  return apiFetch(`/chat/conversations/${conversation_id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ preview: name }),
+  });
 }
 
 // ─── Calendar (Content Calendar Pipeline) ──────────────────────────────────

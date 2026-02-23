@@ -42,6 +42,9 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
 
+    # Fix deprecation warning for Celery 6.0+
+    broker_connection_retry_on_startup=True,
+
     # Result backend
     result_expires=86400,  # 24 hours
 )

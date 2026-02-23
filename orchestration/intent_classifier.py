@@ -101,10 +101,11 @@ AVAILABLE INTENTS (pick exactly one):
 | upload_calendar | source_type, url_or_name | Upload/connect a content calendar |
 | list_calendar | (optional: status, brand) | List calendar entries |
 | process_calendar | upload_id or entry_id | Process calendar entries |
+| create_image | prompt | Generate an image based on a text prompt |
 | help | | Show what you can do |
 | general_chat | | Freeform conversation / clarification |
 
-KNOWN AGENTS: content_creator, hashtag_generator, review_agent, engagement_bot, analytics_agent, data_parser, scheduler_bot, publisher_bot
+KNOWN AGENTS: content_creator, hashtag_generator, review_agent, engagement_bot, analytics_agent, data_parser, scheduler_bot, publisher_bot, image_generator
 KNOWN PROVIDERS: ollama (free/local), openai, gemini, anthropic, groq, openrouter
 PLATFORMS: instagram, facebook, twitter, youtube
 TONES: professional, casual, educational, witty, formal

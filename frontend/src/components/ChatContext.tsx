@@ -5,12 +5,12 @@ import {
     sendChatMessage,
     getChatHistory,
     listConversations,
+    deleteConversation,
+    renameConversation,
     type ChatMessage,
     type ChatResponse,
     type ConversationPreview,
 } from "@/lib/api";
-
-// ─── Chat Mode (like Gemini/ChatGPT) ──────────────────────────────────────
 
 export type ChatMode =
     | "chat"          // Default general chat
@@ -81,10 +81,25 @@ interface ChatContextType {
     setShowHistory: (val: boolean) => void;
     setActiveMode: (mode: ChatMode) => void;
     setIsWidgetOpen: (open: boolean) => void;
-    handleSend: (text?: string) => Promise<void>;
+    handleSend: (text?: string, options?: {
+        model?: string,
+        temperature?: number,
+        max_tokens?: number,
+        exec_mode?: string,
+        context_controls?: {
+            brand_memory: boolean;
+            calendar_context: boolean;
+            past_posts: boolean;
+            engagement_data: boolean;
+        }
+    }) => Promise<void>;
     loadConversation: (convId: string) => Promise<void>;
     startNewChat: () => void;
     refreshConversations: () => void;
+
+    // Manage chats
+    removeChat: (convId: string) => Promise<void>;
+    renameChat: (convId: string, newName: string) => Promise<void>;
 
     // Image actions
     addImages: (files: File[]) => Promise<void>;
@@ -191,7 +206,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     // ── Send message ───────────────────────────────────────────────────
 
-    const handleSend = useCallback(async (text?: string) => {
+    const handleSend = useCallback(async (text?: string, options?: {
+        model?: string,
+        temperature?: number,
+        max_tokens?: number,
+        exec_mode?: string,
+        context_controls?: {
+            brand_memory: boolean;
+            calendar_context: boolean;
+            past_posts: boolean;
+            engagement_data: boolean;
+        }
+    }) => {
         const msg = (text || input).trim();
         const hasImages = attachedImages.length > 0;
         if ((!msg && !hasImages) || loading) return;
@@ -211,7 +237,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         setMessages((prev) => [
             ...prev,
-            { role: "user", content: msg || "📷 Image", image_data: imageDataForMessage },
+            { role: "user", content: msg || "📷 Image", image_data: imageDataForMessage, model_used: options?.model },
         ]);
         setInput("");
         clearImages();
@@ -221,12 +247,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             const res: ChatResponse = await sendChatMessage(
                 finalMsg,
                 conversationId || undefined,
-                imageDataForApi
+                imageDataForApi,
+                options
             );
             setConversationId(res.conversation_id);
             setMessages((prev) => [
                 ...prev,
-                { role: "assistant", content: res.response, intent: res.intent },
+                { role: "assistant", content: res.response, intent: res.intent, model_used: res.model_used, token_cost: res.token_cost },
             ]);
             refreshConversations();
         } catch {
@@ -259,6 +286,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         clearImages();
     }, [clearImages]);
 
+    // ── Manage Chats ───────────────────────────────────────────────────
+
+    const removeChat = useCallback(async (convId: string) => {
+        try {
+            await deleteConversation(convId);
+            setConversations((prev) => prev.filter((c) => c.conversation_id !== convId));
+            if (conversationId === convId) {
+                startNewChat();
+            }
+        } catch (e) {
+            console.error("Failed to delete chat", e);
+        }
+    }, [conversationId, startNewChat]);
+
+    const renameChat = useCallback(async (convId: string, newName: string) => {
+        if (!newName.trim()) return;
+        try {
+            await renameConversation(convId, newName);
+            refreshConversations();
+        } catch (e) {
+            console.error("Failed to rename chat", e);
+        }
+    }, [refreshConversations]);
+
     return (
         <ChatContext.Provider
             value={{
@@ -280,6 +331,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 loadConversation,
                 startNewChat,
                 refreshConversations,
+                removeChat,
+                renameChat,
                 addImages,
                 removeImage,
                 clearImages,

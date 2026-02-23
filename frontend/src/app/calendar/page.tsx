@@ -1,1115 +1,361 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState } from "react";
 import {
-    uploadCalendarCSV,
-    uploadCalendarGoogleSheet,
-    uploadCalendarJSON,
-    listCalendarUploads,
-    listCalendarEntries,
-    deleteCalendarUpload,
-    processCalendarUpload,
-    processCalendarEntry,
-    getCalendarStats,
-    type CalendarUpload,
-    type CalendarEntry,
-    type CalendarStats,
-} from "@/lib/api";
+    Calendar as CalendarIcon, Upload, Link2, Plus, Search,
+    List, CalendarDays, LayoutGrid, ChevronLeft, ChevronRight,
+    MoreVertical, CheckCircle2, Clock, Zap, Shield, Image as ImageIcon,
+    FileJson, Table
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/IconButton";
 
-/* ─── Platform metadata ─────────────────────────────────────────────────── */
-
-const PLATFORM_META: Record<string, { icon: string; color: string; label: string }> = {
-    instagram: { icon: "📸", color: "#E1306C", label: "Instagram" },
-    facebook: { icon: "📘", color: "#1877F2", label: "Facebook" },
-    twitter: { icon: "𝕏", color: "#1DA1F2", label: "Twitter/X" },
-    youtube: { icon: "▶️", color: "#FF0000", label: "YouTube" },
-    linkedin: { icon: "💼", color: "#0A66C2", label: "LinkedIn" },
-    medium: { icon: "✍️", color: "#00AB6C", label: "Medium" },
-};
-
-const STATUS_STYLES: Record<string, { bg: string; text: string; icon: string }> = {
-    pending: { bg: "rgba(148,163,184,0.15)", text: "#94a3b8", icon: "⏳" },
-    queued: { bg: "rgba(59,130,246,0.15)", text: "#3b82f6", icon: "📤" },
-    content_generated: { bg: "rgba(6,182,212,0.15)", text: "#06b6d4", icon: "✏️" },
-    review_passed: { bg: "rgba(34,197,94,0.15)", text: "#22c55e", icon: "✅" },
-    approval_sent: { bg: "rgba(234,179,8,0.15)", text: "#eab308", icon: "📨" },
-    approved: { bg: "rgba(34,197,94,0.15)", text: "#22c55e", icon: "👍" },
-    rejected: { bg: "rgba(239,68,68,0.15)", text: "#ef4444", icon: "❌" },
-    scheduled: { bg: "rgba(139,92,246,0.15)", text: "#8b5cf6", icon: "📅" },
-    published: { bg: "rgba(139,92,246,0.15)", text: "#8b5cf6", icon: "🚀" },
-    failed: { bg: "rgba(239,68,68,0.15)", text: "#ef4444", icon: "⚠️" },
-};
-
-const PIPELINE_STAGES = [
-    "parsed", "content_creation", "hashtag_generation", "review",
-    "approval", "scheduling", "publishing", "engagement", "analytics", "completed",
+// Mock Data
+const MOCK_RULES = [
+    { id: 1, title: "Every Monday at 9:00 AM", desc: "Generate LinkedIn thought leadership...", active: true, brand: "CorpEdge" },
+    { id: 2, title: "Weekly Thought Leaders", desc: "Weekly entry updates", active: true, brand: "FitPro" },
+    { id: 3, title: "First Day of Each Month", desc: "Monthly summary metrics", active: false, brand: "MemeHouse" }
 ];
 
-/* ─── Calendar Page ──────────────────────────────────────────────────────── */
+const MOCK_CALENDAR_DAYS = Array.from({ length: 35 }, (_, i) => ({
+    date: i + 1,
+    isCurrentMonth: i >= 4 && i < 34,
+    events: i % 5 === 0 ? [{ title: "FitPro", type: "approved" }] : i % 8 === 0 ? [{ title: "CorpEdge", type: "pending" }] : []
+}));
+
+const MOCK_PARSED_DATA = [
+    { date: "2026-04-12", platform: "LinkedIn", brand: "FitPro", topic: "Realign... ", status: "Valid" },
+    { date: "2026-04-14", platform: "Twitter", brand: "CorpEdge", topic: "New API...", status: "Valid" },
+    { date: "2026-04-15", platform: "Instagram", brand: "Estene", topic: "Product launch", status: "Warning" },
+    { date: "2026-04-16", platform: "Facebook", brand: "BrandX", topic: "Weekly...", status: "Error" },
+];
+
+const ToggleSwitch = ({ checked, onChange }: { checked: boolean, onChange?: () => void }) => (
+    <div
+        className={cn("w-8 h-4.5 rounded-full relative cursor-pointer transition-colors", checked ? "bg-[#06b6d4]" : "bg-[#1e293b]")}
+        onClick={onChange}
+    >
+        <div className={cn("absolute top-[2px] left-[2px] bg-white w-3.5 h-3.5 rounded-full transition-transform", checked ? "translate-x-[14px]" : "")} />
+    </div>
+);
 
 export default function CalendarPage() {
-    const [activeTab, setActiveTab] = useState<"uploads" | "entries" | "stats">("uploads");
-    const [uploads, setUploads] = useState<CalendarUpload[]>([]);
-    const [entries, setEntries] = useState<CalendarEntry[]>([]);
-    const [stats, setStats] = useState<CalendarStats | null>(null);
-    const [totalEntries, setTotalEntries] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [processing, setProcessing] = useState<Record<string, boolean>>({});
-    const [selectedUpload, setSelectedUpload] = useState<string | null>(null);
-    const [statusFilter, setStatusFilter] = useState<string>("");
-    const [brandFilter, setBrandFilter] = useState<string>("");
-    const [showUploadModal, setShowUploadModal] = useState(false);
-    const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-    /* ─── Data fetching ───────────────────────────────────────────────────── */
-
-    const fetchUploads = useCallback(async () => {
-        setLoading(true);
-        try {
-            const data = await listCalendarUploads();
-            setUploads(data.items);
-        } catch {
-            setUploads([]);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    const fetchEntries = useCallback(async () => {
-        setLoading(true);
-        try {
-            const data = await listCalendarEntries({
-                upload_id: selectedUpload || undefined,
-                status: statusFilter || undefined,
-                brand: brandFilter || undefined,
-                limit: 100,
-            });
-            setEntries(data.items);
-            setTotalEntries(data.total);
-        } catch {
-            setEntries([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [selectedUpload, statusFilter, brandFilter]);
-
-    const fetchStats = useCallback(async () => {
-        try {
-            const data = await getCalendarStats();
-            setStats(data);
-        } catch {
-            setStats(null);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchUploads();
-        fetchStats();
-    }, [fetchUploads, fetchStats]);
-
-    useEffect(() => {
-        if (activeTab === "entries") fetchEntries();
-    }, [activeTab, fetchEntries]);
-
-    /* ─── Actions ─────────────────────────────────────────────────────────── */
-
-    const showNotif = (type: "success" | "error", message: string) => {
-        setNotification({ type, message });
-        setTimeout(() => setNotification(null), 5000);
-    };
-
-    const handleProcess = async (uploadId: string) => {
-        setProcessing((p) => ({ ...p, [uploadId]: true }));
-        try {
-            const result = await processCalendarUpload(uploadId) as { message?: string };
-            showNotif("success", result.message || "Processing complete!");
-            fetchEntries();
-            fetchStats();
-        } catch (e: unknown) {
-            showNotif("error", e instanceof Error ? e.message : "Processing failed");
-        } finally {
-            setProcessing((p) => ({ ...p, [uploadId]: false }));
-        }
-    };
-
-    const handleProcessEntry = async (entryId: string) => {
-        setProcessing((p) => ({ ...p, [entryId]: true }));
-        try {
-            const result = await processCalendarEntry(entryId) as { message?: string };
-            showNotif("success", result.message || "Entry processed!");
-            fetchEntries();
-            fetchStats();
-        } catch (e: unknown) {
-            showNotif("error", e instanceof Error ? e.message : "Processing failed");
-        } finally {
-            setProcessing((p) => ({ ...p, [entryId]: false }));
-        }
-    };
-
-    const handleDelete = async (uploadId: string) => {
-        if (!confirm("Delete this upload and all its entries?")) return;
-        try {
-            await deleteCalendarUpload(uploadId);
-            showNotif("success", "Upload deleted");
-            fetchUploads();
-            fetchEntries();
-            fetchStats();
-        } catch (e: unknown) {
-            showNotif("error", e instanceof Error ? e.message : "Delete failed");
-        }
-    };
-
-    const handleUploadSuccess = () => {
-        setShowUploadModal(false);
-        fetchUploads();
-        fetchStats();
-        showNotif("success", "Calendar uploaded and parsed successfully!");
-    };
-
-    /* ─── Extract unique brands from entries ──────────────────────────────── */
-
-    const uniqueBrands = Array.from(new Set(entries.map((e) => e.brand).filter(Boolean) as string[]));
-
-    /* ─── Render ──────────────────────────────────────────────────────────── */
+    const [activeTab, setActiveTab] = useState("calendar");
+    const [viewMode, setViewMode] = useState("month");
+    const [showUploadModal, setShowUploadModal] = useState(true);
+    const [uploadStep, setUploadStep] = useState(2); // 1: Upload, 2: Parse/Map
 
     return (
-        <div className="animate-fade-in">
-            {/* Notification */}
-            {notification && (
-                <div
-                    className="fixed top-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg animate-fade-in"
-                    style={{
-                        background: notification.type === "success"
-                            ? "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(34,197,94,0.05))"
-                            : "linear-gradient(135deg, rgba(239,68,68,0.2), rgba(239,68,68,0.05))",
-                        border: `1px solid ${notification.type === "success" ? "#22c55e44" : "#ef444444"}`,
-                        color: notification.type === "success" ? "#22c55e" : "#ef4444",
-                        backdropFilter: "blur(12px)",
-                    }}
-                >
-                    {notification.type === "success" ? "✅ " : "❌ "}{notification.message}
-                </div>
-            )}
+        <div className="flex h-[calc(100vh-2rem)] bg-[#0f111a] text-sm animate-in fade-in duration-500 overflow-hidden">
 
-            {/* Header */}
-            <div className="mb-8 flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold mb-2">
-                        📅 Content <span className="gradient-text">Calendar</span>
-                    </h1>
-                    <p style={{ color: "var(--zaytri-text-dim)" }}>
-                        Upload, parse, and process content calendars through the AI pipeline
-                    </p>
-                </div>
-                <button onClick={() => setShowUploadModal(true)} className="btn-primary">
-                    + Upload Calendar
-                </button>
-            </div>
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col min-w-0 border-r border-[#1e293b] relative">
 
-            {/* Stats Summary */}
-            {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-children">
-                    <StatCard icon="📁" label="Uploads" value={stats.total_uploads} color="#06b6d4" />
-                    <StatCard icon="📋" label="Total Entries" value={stats.total_entries} color="#8b5cf6" />
-                    <StatCard
-                        icon="🏢"
-                        label="Brands"
-                        value={Object.keys(stats.by_brand).length}
-                        color="#f97316"
-                    />
-                    <StatCard
-                        icon="🌐"
-                        label="Platforms"
-                        value={Object.keys(stats.by_platform).length}
-                        color="#ec4899"
-                    />
-                </div>
-            )}
-
-            {/* Tabs */}
-            <div
-                className="flex gap-1 p-1 rounded-xl mb-6"
-                style={{ background: "var(--zaytri-surface)" }}
-            >
-                {[
-                    { key: "uploads" as const, label: "📁 Uploads", count: uploads.length },
-                    { key: "entries" as const, label: "📋 Entries", count: totalEntries },
-                    { key: "stats" as const, label: "📊 Analytics" },
-                ].map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
-                        style={{
-                            background: activeTab === tab.key
-                                ? "linear-gradient(135deg, rgba(6,182,212,0.2), rgba(6,182,212,0.05))"
-                                : "transparent",
-                            color: activeTab === tab.key ? "white" : "var(--zaytri-text-dim)",
-                            border: activeTab === tab.key
-                                ? "1px solid rgba(6,182,212,0.3)"
-                                : "1px solid transparent",
-                        }}
-                    >
-                        {tab.label}
-                        {tab.count !== undefined && (
-                            <span
-                                className="text-[10px] px-2 py-0.5 rounded-full"
-                                style={{ background: "rgba(6,182,212,0.15)", color: "#06b6d4" }}
-                            >
-                                {tab.count}
-                            </span>
-                        )}
-                    </button>
-                ))}
-            </div>
-
-            {/* Uploads Tab */}
-            {activeTab === "uploads" && (
-                <div className="space-y-4 stagger-children">
-                    {loading ? (
-                        <LoadingState message="Loading uploads..." />
-                    ) : uploads.length === 0 ? (
-                        <EmptyState
-                            icon="📁"
-                            title="No calendars uploaded"
-                            description="Upload a CSV, connect a Google Sheet, or import JSON to get started."
-                            action={() => setShowUploadModal(true)}
-                            actionLabel="Upload Calendar"
-                        />
-                    ) : (
-                        uploads.map((upload) => (
-                            <UploadCard
-                                key={upload.id}
-                                upload={upload}
-                                isProcessing={processing[upload.id] || false}
-                                onProcess={() => handleProcess(upload.id)}
-                                onDelete={() => handleDelete(upload.id)}
-                                onViewEntries={() => {
-                                    setSelectedUpload(upload.id);
-                                    setActiveTab("entries");
-                                }}
-                            />
-                        ))
-                    )}
-                </div>
-            )}
-
-            {/* Entries Tab */}
-            {activeTab === "entries" && (
-                <div>
-                    {/* Filters */}
-                    <div className="flex flex-wrap gap-3 mb-6">
-                        <select
-                            value={selectedUpload || ""}
-                            onChange={(e) => setSelectedUpload(e.target.value || null)}
-                            className="input-field text-sm"
-                            style={{ width: "auto", padding: "8px 14px" }}
-                        >
-                            <option value="">All Uploads</option>
-                            {uploads.map((u) => (
-                                <option key={u.id} value={u.id}>{u.name}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="input-field text-sm"
-                            style={{ width: "auto", padding: "8px 14px" }}
-                        >
-                            <option value="">All Statuses</option>
-                            {Object.keys(STATUS_STYLES).map((s) => (
-                                <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={brandFilter}
-                            onChange={(e) => setBrandFilter(e.target.value)}
-                            className="input-field text-sm"
-                            style={{ width: "auto", padding: "8px 14px" }}
-                        >
-                            <option value="">All Brands</option>
-                            {uniqueBrands.map((b) => (
-                                <option key={b} value={b}>{b}</option>
-                            ))}
-                        </select>
-                        <button onClick={fetchEntries} className="btn-secondary text-sm">
-                            ↻ Refresh
-                        </button>
-                    </div>
-
-                    {loading ? (
-                        <LoadingState message="Loading entries..." />
-                    ) : entries.length === 0 ? (
-                        <EmptyState
-                            icon="📋"
-                            title="No entries found"
-                            description="Upload a calendar to see parsed entries here."
-                        />
-                    ) : (
-                        <div className="space-y-3 stagger-children">
-                            {entries.map((entry) => (
-                                <EntryCard
-                                    key={entry.id}
-                                    entry={entry}
-                                    isProcessing={processing[entry.id] || false}
-                                    onProcess={() => handleProcessEntry(entry.id)}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Stats Tab */}
-            {activeTab === "stats" && (
-                <CalendarAnalytics stats={stats} />
-            )}
-
-            {/* Upload Modal */}
-            {showUploadModal && (
-                <UploadModal
-                    onClose={() => setShowUploadModal(false)}
-                    onSuccess={handleUploadSuccess}
-                />
-            )}
-        </div>
-    );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/* Sub-components                                                            */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
-function StatCard({ icon, label, value, color }: { icon: string; label: string; value: number | string; color: string }) {
-    return (
-        <div className="glass-card p-5">
-            <div className="flex items-center justify-between mb-3">
-                <span className="text-2xl">{icon}</span>
-                <span
-                    className="text-[10px] font-medium px-2 py-0.5 rounded-full"
-                    style={{ background: `${color}22`, color }}
-                >
-                    Live
-                </span>
-            </div>
-            <p className="text-2xl font-bold mb-1">{value}</p>
-            <p className="text-xs" style={{ color: "var(--zaytri-text-dim)" }}>{label}</p>
-        </div>
-    );
-}
-
-/* ─── Upload Card ────────────────────────────────────────────────────────── */
-
-function UploadCard({
-    upload,
-    isProcessing,
-    onProcess,
-    onDelete,
-    onViewEntries,
-}: {
-    upload: CalendarUpload;
-    isProcessing: boolean;
-    onProcess: () => void;
-    onDelete: () => void;
-    onViewEntries: () => void;
-}) {
-    const sourceIcons: Record<string, string> = {
-        csv_file: "📄",
-        google_sheet: "📊",
-        google_doc: "📝",
-        json_file: "📋",
-        manual: "✍️",
-    };
-
-    return (
-        <div
-            className="p-6 rounded-xl transition-all duration-300 hover:border-opacity-50 group"
-            style={{
-                background: "var(--zaytri-surface)",
-                border: "1px solid var(--zaytri-border)",
-            }}
-        >
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                        <span className="text-2xl">{sourceIcons[upload.source_type] || "📁"}</span>
+                {/* Header */}
+                <div className="p-6 pb-4 border-b border-[#1e293b]">
+                    <div className="flex items-start justify-between mb-6">
                         <div>
-                            <h3 className="text-base font-semibold">{upload.name}</h3>
-                            <p className="text-xs" style={{ color: "var(--zaytri-text-dim)" }}>
-                                {upload.source_type.replace(/_/g, " ")} •{" "}
-                                {new Date(upload.created_at).toLocaleDateString("en-US", {
-                                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                                })}
-                            </p>
+                            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                                📅 Content Calendar
+                            </h1>
+                            <p className="text-[#94a3b8] mt-1text-xs">Import, map & automate content planning across all brands</p>
                         </div>
                     </div>
 
-                    {/* Row counts */}
-                    <div className="flex gap-4 mt-3">
+                    {/* Top Action Bar */}
+                    <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
-                            <span
-                                className="text-xs font-medium px-2.5 py-1 rounded-lg"
-                                style={{ background: "rgba(6,182,212,0.15)", color: "#06b6d4" }}
+                            <button
+                                onClick={() => { setShowUploadModal(true); setUploadStep(1); }}
+                                className="flex items-center gap-2 bg-[#1e293b] hover:bg-[#334155] border border-[#334155] text-white px-4 py-2 rounded-xl font-medium transition-all"
                             >
-                                {upload.parsed_rows} parsed
-                            </span>
+                                <Plus size={16} /> Upload Calendar
+                            </button>
+                            <button className="flex items-center gap-2 bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 border border-[#06b6d4]/20 text-[#22d3ee] px-4 py-2 rounded-xl font-medium transition-all">
+                                <Table size={16} /> Connect Google Sheet
+                            </button>
+                            <button className="flex items-center gap-2 bg-[#1e293b] hover:bg-[#334155] text-white px-4 py-2 rounded-xl font-medium transition-all border border-transparent">
+                                <FileJson size={16} /> Create Manual Entry
+                            </button>
                         </div>
-                        {upload.failed_rows > 0 && (
-                            <div className="flex items-center gap-2">
-                                <span
-                                    className="text-xs font-medium px-2.5 py-1 rounded-lg"
-                                    style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}
-                                >
-                                    {upload.failed_rows} failed
-                                </span>
-                            </div>
-                        )}
-                        <span
-                            className="text-xs font-medium px-2.5 py-1 rounded-lg"
-                            style={{
-                                background: upload.is_processed ? "rgba(34,197,94,0.15)" : "rgba(234,179,8,0.15)",
-                                color: upload.is_processed ? "#22c55e" : "#eab308",
-                            }}
-                        >
-                            {upload.is_processed ? "✓ Processed" : "⏳ Ready"}
-                        </span>
-                    </div>
-                </div>
 
-                {/* Actions */}
-                <div className="flex gap-2">
-                    <button
-                        onClick={onViewEntries}
-                        className="btn-secondary text-xs"
-                        style={{ padding: "8px 14px" }}
-                    >
-                        👁️ View Entries
-                    </button>
-                    <button
-                        onClick={onProcess}
-                        disabled={isProcessing}
-                        className="btn-primary text-xs"
-                        style={{
-                            padding: "8px 14px",
-                            opacity: isProcessing ? 0.6 : 1,
-                        }}
-                    >
-                        {isProcessing ? "⏳ Processing..." : "▶️ Process All"}
-                    </button>
-                    <button
-                        onClick={onDelete}
-                        className="p-2 rounded-lg text-xs transition-all duration-200"
-                        style={{
-                            background: "rgba(239,68,68,0.1)",
-                            border: "1px solid rgba(239,68,68,0.2)",
-                            color: "#ef4444",
-                        }}
-                        title="Delete"
-                    >
-                        🗑️
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/* ─── Entry Card ─────────────────────────────────────────────────────────── */
-
-function EntryCard({
-    entry,
-    isProcessing,
-    onProcess,
-}: {
-    entry: CalendarEntry;
-    isProcessing: boolean;
-    onProcess: () => void;
-}) {
-    const [expanded, setExpanded] = useState(false);
-    const style = STATUS_STYLES[entry.status] || STATUS_STYLES.pending;
-
-    // Pipeline progress
-    const currentStageIndex = PIPELINE_STAGES.indexOf(entry.pipeline_stage);
-    const progress = Math.max(0, ((currentStageIndex + 1) / PIPELINE_STAGES.length) * 100);
-
-    return (
-        <div
-            className="rounded-xl transition-all duration-300 overflow-hidden"
-            style={{
-                background: "var(--zaytri-surface)",
-                border: "1px solid var(--zaytri-border)",
-            }}
-        >
-            {/* Main row */}
-            <div
-                className="p-4 flex items-center gap-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
-                onClick={() => setExpanded(!expanded)}
-            >
-                {/* Row number */}
-                <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-                    style={{ background: "var(--zaytri-surface-2)", color: "var(--zaytri-text-dim)" }}
-                >
-                    {entry.row_number || "–"}
-                </div>
-
-                {/* Date */}
-                <div className="w-24 shrink-0">
-                    <p className="text-xs font-medium">{entry.date || "—"}</p>
-                </div>
-
-                {/* Brand */}
-                <div className="w-32 shrink-0">
-                    <span
-                        className="text-xs font-medium px-2 py-1 rounded-md"
-                        style={{ background: "var(--zaytri-surface-2)" }}
-                    >
-                        {entry.brand || "—"}
-                    </span>
-                </div>
-
-                {/* Topic */}
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{entry.topic}</p>
-                    {entry.content_type && (
-                        <p className="text-[10px] mt-0.5" style={{ color: "var(--zaytri-text-dim)" }}>
-                            {entry.content_type}
-                        </p>
-                    )}
-                </div>
-
-                {/* Platforms */}
-                <div className="flex gap-1 shrink-0">
-                    {(entry.platforms || []).map((p) => {
-                        const meta = PLATFORM_META[p] || { icon: "🌐", color: "#94a3b8", label: p };
-                        return (
-                            <span
-                                key={p}
-                                className="text-sm"
-                                title={meta.label}
-                                style={{ filter: "drop-shadow(0 0 4px " + meta.color + "44)" }}
-                            >
-                                {meta.icon}
-                            </span>
-                        );
-                    })}
-                </div>
-
-                {/* Approval badge */}
-                {entry.approval_required && (
-                    <span
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                        style={{ background: "rgba(234,179,8,0.15)", color: "#eab308" }}
-                    >
-                        🔒 Approval
-                    </span>
-                )}
-
-                {/* Status */}
-                <span
-                    className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase shrink-0"
-                    style={{ background: style.bg, color: style.text }}
-                >
-                    {style.icon} {entry.status.replace(/_/g, " ")}
-                </span>
-
-                {/* Process button */}
-                {entry.status === "pending" && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onProcess(); }}
-                        disabled={isProcessing}
-                        className="btn-primary text-[10px] shrink-0"
-                        style={{ padding: "6px 12px", opacity: isProcessing ? 0.6 : 1 }}
-                    >
-                        {isProcessing ? "⏳" : "▶️"}
-                    </button>
-                )}
-
-                <span
-                    className="text-xs transition-transform duration-200 shrink-0"
-                    style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
-                >
-                    ▾
-                </span>
-            </div>
-
-            {/* Expanded details */}
-            {expanded && (
-                <div
-                    className="px-4 pb-4 pt-2 border-t animate-fade-in"
-                    style={{ borderColor: "var(--zaytri-border)" }}
-                >
-                    {/* Pipeline progress */}
-                    <div className="mb-4">
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-medium">Pipeline Progress</p>
-                            <p className="text-[10px]" style={{ color: "var(--zaytri-text-dim)" }}>
-                                Stage: {entry.pipeline_stage.replace(/_/g, " ")}
-                            </p>
-                        </div>
-                        <div
-                            className="w-full h-2 rounded-full overflow-hidden"
-                            style={{ background: "var(--zaytri-surface-2)" }}
-                        >
-                            <div
-                                className="h-full rounded-full transition-all duration-500"
-                                style={{
-                                    width: `${progress}%`,
-                                    background: entry.status === "failed"
-                                        ? "#ef4444"
-                                        : "linear-gradient(90deg, #06b6d4, #8b5cf6)",
-                                }}
+                        <div className="relative w-64">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
+                            <input
+                                type="text"
+                                placeholder="Search content..."
+                                className="w-full bg-[#161a29] border border-[#1e293b] text-white pl-9 pr-3 py-2 rounded-xl outline-none focus:border-[#06b6d4] transition-colors"
                             />
                         </div>
-                        {/* Stage dots */}
-                        <div className="flex justify-between mt-2">
-                            {PIPELINE_STAGES.map((stage, i) => (
-                                <div
-                                    key={stage}
-                                    className="flex flex-col items-center"
-                                    title={stage.replace(/_/g, " ")}
-                                >
-                                    <div
-                                        className="w-2 h-2 rounded-full transition-all duration-300"
-                                        style={{
-                                            background: i <= currentStageIndex
-                                                ? (entry.status === "failed" && i === currentStageIndex ? "#ef4444" : "#22c55e")
-                                                : "var(--zaytri-surface-2)",
-                                            boxShadow: i <= currentStageIndex
-                                                ? "0 0 6px rgba(34,197,94,0.4)"
-                                                : "none",
-                                        }}
-                                    />
-                                </div>
-                            ))}
-                        </div>
                     </div>
-
-                    {/* Details grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <DetailItem label="Content Type" value={entry.content_type} />
-                        <DetailItem label="Tone" value={entry.tone} />
-                        <DetailItem
-                            label="Default Hashtags"
-                            value={(entry.default_hashtags || []).join(" ")}
-                        />
-                        <DetailItem
-                            label="Generated Hashtags"
-                            value={(entry.generated_hashtags || []).join(" ")}
-                        />
-                    </div>
-
-                    {/* Content IDs */}
-                    {entry.content_ids && entry.content_ids.length > 0 && (
-                        <div className="mt-3">
-                            <p className="text-xs font-medium mb-1">Generated Content IDs:</p>
-                            <div className="flex flex-wrap gap-2">
-                                {entry.content_ids.map((id) => (
-                                    <span
-                                        key={id}
-                                        className="text-[10px] font-mono px-2 py-1 rounded-md"
-                                        style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6" }}
-                                    >
-                                        {id.slice(0, 8)}…
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Errors */}
-                    {entry.pipeline_errors && entry.pipeline_errors.length > 0 && (
-                        <div className="mt-3 p-3 rounded-lg" style={{ background: "rgba(239,68,68,0.1)" }}>
-                            <p className="text-xs font-medium mb-1" style={{ color: "#ef4444" }}>Pipeline Errors:</p>
-                            {entry.pipeline_errors.map((err, i) => (
-                                <p key={i} className="text-[10px] font-mono" style={{ color: "#ef444499" }}>
-                                    {err}
-                                </p>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-}
-
-/* ─── Detail Item ────────────────────────────────────────────────────────── */
-
-function DetailItem({ label, value }: { label: string; value: string | null | undefined }) {
-    return (
-        <div>
-            <p className="text-[10px] font-medium uppercase mb-1" style={{ color: "var(--zaytri-text-dim)" }}>
-                {label}
-            </p>
-            <p className="text-xs">{value || "—"}</p>
-        </div>
-    );
-}
-
-/* ─── Loading / Empty State ──────────────────────────────────────────────── */
-
-function LoadingState({ message }: { message: string }) {
-    return (
-        <div className="text-center py-12">
-            <div className="inline-block w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mb-4"
-                style={{ borderColor: "var(--zaytri-primary)", borderTopColor: "transparent" }}
-            />
-            <p className="text-sm" style={{ color: "var(--zaytri-text-dim)" }}>{message}</p>
-        </div>
-    );
-}
-
-function EmptyState({
-    icon,
-    title,
-    description,
-    action,
-    actionLabel,
-}: {
-    icon: string;
-    title: string;
-    description: string;
-    action?: () => void;
-    actionLabel?: string;
-}) {
-    return (
-        <div
-            className="text-center py-16 rounded-xl"
-            style={{ background: "var(--zaytri-surface)", border: "1px dashed var(--zaytri-border)" }}
-        >
-            <p className="text-5xl mb-4">{icon}</p>
-            <p className="text-lg font-semibold mb-2">{title}</p>
-            <p className="text-sm mb-6" style={{ color: "var(--zaytri-text-dim)" }}>{description}</p>
-            {action && (
-                <button onClick={action} className="btn-primary">{actionLabel}</button>
-            )}
-        </div>
-    );
-}
-
-/* ─── Upload Modal ───────────────────────────────────────────────────────── */
-
-function UploadModal({
-    onClose,
-    onSuccess,
-}: {
-    onClose: () => void;
-    onSuccess: () => void;
-}) {
-    const [uploadType, setUploadType] = useState<"csv" | "google_sheet" | "json">("csv");
-    const [sheetUrl, setSheetUrl] = useState("");
-    const [calendarName, setCalendarName] = useState("");
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState("");
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setUploading(true);
-        setError("");
-
-        try {
-            if (uploadType === "csv") {
-                await uploadCalendarCSV(file, calendarName || file.name);
-            } else {
-                await uploadCalendarJSON(file, calendarName || file.name);
-            }
-            onSuccess();
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Upload failed");
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    const handleGoogleSheet = async () => {
-        if (!sheetUrl.trim()) {
-            setError("Please enter a Google Sheet URL");
-            return;
-        }
-
-        setUploading(true);
-        setError("");
-
-        try {
-            await uploadCalendarGoogleSheet(sheetUrl, calendarName || "Google Sheet Import");
-            onSuccess();
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Import failed");
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)" }}
-            onClick={onClose}
-        >
-            <div
-                className="w-full max-w-lg rounded-2xl p-6 animate-fade-in"
-                style={{
-                    background: "linear-gradient(180deg, #16161e 0%, #12121a 100%)",
-                    border: "1px solid var(--zaytri-border)",
-                    boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
-                }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold">📅 Upload Calendar</h2>
-                    <button
-                        onClick={onClose}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-                        style={{ background: "var(--zaytri-surface-2)" }}
-                    >
-                        ✕
-                    </button>
                 </div>
 
-                {/* Calendar name */}
-                <div className="mb-4">
-                    <label className="text-xs font-medium mb-2 block" style={{ color: "var(--zaytri-text-dim)" }}>
-                        Calendar Name (optional)
-                    </label>
-                    <input
-                        type="text"
-                        value={calendarName}
-                        onChange={(e) => setCalendarName(e.target.value)}
-                        className="input-field"
-                        placeholder="e.g. March 2026 Content Plan"
-                    />
-                </div>
-
-                {/* Source type selector */}
-                <div className="flex gap-2 mb-6">
-                    {[
-                        { key: "csv" as const, label: "📄 CSV File", desc: "Upload .csv" },
-                        { key: "google_sheet" as const, label: "📊 Google Sheet", desc: "Paste URL" },
-                        { key: "json" as const, label: "📋 JSON File", desc: "Upload .json" },
-                    ].map((type) => (
-                        <button
-                            key={type.key}
-                            onClick={() => setUploadType(type.key)}
-                            className="flex-1 p-4 rounded-xl text-center transition-all duration-200"
-                            style={{
-                                background: uploadType === type.key
-                                    ? "linear-gradient(135deg, rgba(6,182,212,0.15), rgba(6,182,212,0.05))"
-                                    : "var(--zaytri-surface)",
-                                border: uploadType === type.key
-                                    ? "1px solid rgba(6,182,212,0.3)"
-                                    : "1px solid var(--zaytri-border)",
-                            }}
-                        >
-                            <p className="text-sm font-medium">{type.label}</p>
-                            <p className="text-[10px] mt-1" style={{ color: "var(--zaytri-text-dim)" }}>
-                                {type.desc}
-                            </p>
-                        </button>
-                    ))}
-                </div>
-
-                {/* Upload area */}
-                {uploadType === "google_sheet" ? (
-                    <div>
-                        <label className="text-xs font-medium mb-2 block" style={{ color: "var(--zaytri-text-dim)" }}>
-                            Google Sheet URL
-                        </label>
-                        <input
-                            type="url"
-                            value={sheetUrl}
-                            onChange={(e) => setSheetUrl(e.target.value)}
-                            className="input-field mb-4"
-                            placeholder="https://docs.google.com/spreadsheets/d/..."
-                        />
-                        <button
-                            onClick={handleGoogleSheet}
-                            disabled={uploading}
-                            className="btn-primary w-full"
-                            style={{ opacity: uploading ? 0.6 : 1 }}
-                        >
-                            {uploading ? "⏳ Importing..." : "📥 Import Google Sheet"}
-                        </button>
-                    </div>
-                ) : (
-                    <div>
-                        <div
-                            className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 hover:border-opacity-60 mb-4"
-                            style={{
-                                borderColor: "var(--zaytri-border)",
-                                background: "var(--zaytri-surface)",
-                            }}
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <p className="text-4xl mb-3">{uploadType === "csv" ? "📄" : "📋"}</p>
-                            <p className="text-sm font-medium mb-1">
-                                Click to upload {uploadType === "csv" ? ".csv" : ".json"} file
-                            </p>
-                            <p className="text-xs" style={{ color: "var(--zaytri-text-dim)" }}>
-                                or drag and drop
-                            </p>
-                        </div>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept={uploadType === "csv" ? ".csv,.tsv" : ".json,.jsonl"}
-                            onChange={handleFileUpload}
-                            className="hidden"
-                        />
-                    </div>
-                )}
-
-                {/* Error */}
-                {error && (
-                    <div
-                        className="mt-4 p-3 rounded-lg text-sm"
-                        style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
-                    >
-                        ❌ {error}
-                    </div>
-                )}
-
-                {/* Help text */}
-                <div className="mt-6 p-4 rounded-xl" style={{ background: "var(--zaytri-surface-2)" }}>
-                    <p className="text-xs font-medium mb-2">📖 Expected Columns:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {["Date", "Brand", "Content_Type", "Topic", "Platforms", "Approval_Required", "Status", "Hashtags"].map((col) => (
-                            <span
-                                key={col}
-                                className="text-[10px] font-mono px-2 py-0.5 rounded"
-                                style={{ background: "var(--zaytri-surface)", border: "1px solid var(--zaytri-border)" }}
+                {/* Tabs & View Controls */}
+                <div className="flex items-center justify-between p-4 border-b border-[#1e293b] bg-[#0a0c10]/50 backdrop-blur-md">
+                    <div className="flex gap-1.5 p-1 rounded-lg bg-[#161a29] border border-[#1e293b]">
+                        {[
+                            { id: "uploads", label: "Uploads", icon: Upload },
+                            { id: "calendar", label: "Calendar", icon: CalendarIcon },
+                            { id: "rules", label: "Automation Rules", icon: Zap },
+                            { id: "history", label: "History", icon: Clock },
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-semibold transition-all",
+                                    activeTab === tab.id
+                                        ? "bg-[#1e293b] text-white shadow-sm"
+                                        : "text-[#94a3b8] hover:text-white"
+                                )}
                             >
-                                {col}
-                            </span>
+                                <tab.icon size={14} /> {tab.label}
+                            </button>
                         ))}
                     </div>
-                </div>
-            </div>
-        </div>
-    );
-}
 
-/* ─── Calendar Analytics ─────────────────────────────────────────────────── */
-
-function CalendarAnalytics({ stats }: { stats: CalendarStats | null }) {
-    if (!stats) {
-        return <LoadingState message="Loading analytics..." />;
-    }
-
-    const statusEntries = Object.entries(stats.by_status);
-    const brandEntries = Object.entries(stats.by_brand);
-    const platformEntries = Object.entries(stats.by_platform);
-
-    const totalByStatus = statusEntries.reduce((sum, [, count]) => sum + count, 0) || 1;
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 stagger-children">
-            {/* Status Distribution */}
-            <div className="glass-card p-6">
-                <h3 className="text-base font-bold mb-4">📊 Status Distribution</h3>
-                {statusEntries.length === 0 ? (
-                    <p className="text-sm" style={{ color: "var(--zaytri-text-dim)" }}>No data yet</p>
-                ) : (
-                    <div className="space-y-3">
-                        {statusEntries.map(([status, count]) => {
-                            const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
-                            const pct = Math.round((count / totalByStatus) * 100);
-                            return (
-                                <div key={status}>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="text-xs font-medium capitalize">
-                                            {style.icon} {status.replace(/_/g, " ")}
-                                        </span>
-                                        <span className="text-xs" style={{ color: style.text }}>
-                                            {count} ({pct}%)
-                                        </span>
-                                    </div>
-                                    <div
-                                        className="h-2 rounded-full overflow-hidden"
-                                        style={{ background: "var(--zaytri-surface-2)" }}
-                                    >
-                                        <div
-                                            className="h-full rounded-full transition-all duration-700"
-                                            style={{ width: `${pct}%`, background: style.text }}
-                                        />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {/* Brand Distribution */}
-            <div className="glass-card p-6">
-                <h3 className="text-base font-bold mb-4">🏢 Brand Distribution</h3>
-                {brandEntries.length === 0 ? (
-                    <p className="text-sm" style={{ color: "var(--zaytri-text-dim)" }}>No data yet</p>
-                ) : (
-                    <div className="space-y-3">
-                        {brandEntries.map(([brand, count]) => (
-                            <div
-                                key={brand}
-                                className="flex items-center justify-between p-3 rounded-xl"
-                                style={{ background: "var(--zaytri-surface)" }}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <div
-                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
-                                        style={{
-                                            background: "linear-gradient(135deg, rgba(6,182,212,0.2), rgba(139,92,246,0.2))",
-                                        }}
-                                    >
-                                        {brand[0]?.toUpperCase()}
-                                    </div>
-                                    <span className="text-sm font-medium">{brand}</span>
-                                </div>
-                                <span
-                                    className="text-xs font-semibold px-3 py-1 rounded-full"
-                                    style={{ background: "rgba(6,182,212,0.15)", color: "#06b6d4" }}
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 text-[#cbd5e1] text-xs font-bold mr-2">
+                            <ChevronLeft size={16} className="cursor-pointer hover:text-white" />
+                            <span className="w-16 text-center">April 2026</span>
+                            <ChevronRight size={16} className="cursor-pointer hover:text-white" />
+                        </div>
+                        <div className="flex gap-1 p-1 rounded-lg bg-[#161a29] border border-[#1e293b]">
+                            {[
+                                { id: "list", icon: List, label: "List" },
+                                { id: "week", icon: LayoutGrid, label: "Week" },
+                                { id: "month", icon: CalendarDays, label: "Month" },
+                            ].map(view => (
+                                <button
+                                    key={view.id}
+                                    onClick={() => setViewMode(view.id)}
+                                    className={cn(
+                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
+                                        viewMode === view.id
+                                            ? "bg-[#1e293b] text-white shadow-sm border border-[#334155]"
+                                            : "text-[#94a3b8] hover:text-white border border-transparent"
+                                    )}
                                 >
-                                    {count} entries
+                                    <view.icon size={14} className={viewMode === view.id ? "text-[#06b6d4]" : ""} />
+                                    {view.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Calendar Grid View (Mock) */}
+                <div className="flex-1 overflow-auto bg-[#0a0c10] p-4 custom-scrollbar">
+                    <div className="grid grid-cols-7 gap-px bg-[#1e293b] border border-[#1e293b] rounded-xl overflow-hidden shadow-lg">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => (
+                            <div key={day} className="bg-[#161a29] text-[#94a3b8] text-[10px] font-bold uppercase tracking-wider p-2 text-center">
+                                {day}
+                            </div>
+                        ))}
+                        {MOCK_CALENDAR_DAYS.map((day, i) => (
+                            <div key={i} className={cn(
+                                "min-h-[100px] p-2 bg-[#0f111a] transition-colors hover:bg-[#161a29]",
+                                !day.isCurrentMonth && "opacity-40"
+                            )}>
+                                <span className={cn(
+                                    "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1",
+                                    day.date === 15 && day.isCurrentMonth ? "bg-[#06b6d4] text-white" : "text-[#cbd5e1]"
+                                )}>
+                                    {day.isCurrentMonth ? (day.date - 3 > 0 ? day.date - 3 : day.date) : day.date}
                                 </span>
+                                <div className="space-y-1">
+                                    {day.events.map((ev, idx) => (
+                                        <div key={idx} className={cn(
+                                            "text-[10px] px-2 py-1 rounded border truncate font-medium",
+                                            ev.type === "approved" ? "bg-[#22c55e]/10 border-[#22c55e]/20 text-[#4ade80]" :
+                                                ev.type === "pending" ? "bg-[#eab308]/10 border-[#eab308]/20 text-[#facc15]" : ""
+                                        )}>
+                                            {ev.title}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+
+                {/* Upload Modal Overlay Overlay */}
+                {showUploadModal && (
+                    <div className="absolute inset-0 z-50 bg-[#0a0c10]/80 backdrop-blur-sm flex items-center justify-center animate-in fade-in zoom-in-95">
+                        <div className="bg-[#161a29] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+
+                            <div className="p-5 border-b border-[#1e293b] flex justify-between items-center bg-[#0f111a]">
+                                <div>
+                                    <h2 className="text-lg font-bold text-white">Parse & Validate Imported Data</h2>
+                                    <p className="text-xs text-[#94a3b8]">Review your CSV/JSON columns and configure injection rules.</p>
+                                </div>
+                                <button onClick={() => setShowUploadModal(false)} className="text-[#94a3b8] hover:text-white pb-6 px-2 text-2xl leading-none">&times;</button>
+                            </div>
+
+                            <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
+                                {/* Table preview */}
+                                <div className="border border-[#1e293b] rounded-xl overflow-hidden mb-6">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-[#1e293b] text-[#94a3b8]">
+                                            <tr>
+                                                <th className="px-3 py-2 font-medium">Date</th>
+                                                <th className="px-3 py-2 font-medium">Platform</th>
+                                                <th className="px-3 py-2 font-medium">Brand</th>
+                                                <th className="px-3 py-2 font-medium">Topic</th>
+                                                <th className="px-3 py-2 font-medium">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[#1e293b] bg-[#0f111a]">
+                                            {MOCK_PARSED_DATA.map((row, i) => (
+                                                <tr key={i}>
+                                                    <td className="px-3 py-2.5 text-[#cbd5e1]">{row.date}</td>
+                                                    <td className="px-3 py-2.5 text-white flex items-center gap-1.5"><List size={12} className="text-[#06b6d4]" /> {row.platform}</td>
+                                                    <td className="px-3 py-2.5 text-[#cbd5e1]">{row.brand}</td>
+                                                    <td className="px-3 py-2.5 text-[#94a3b8] truncate max-w-[120px]">{row.topic}</td>
+                                                    <td className="px-3 py-2.5">
+                                                        <span className={cn(
+                                                            "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase",
+                                                            row.status === "Valid" ? "bg-[#22c55e]/10 text-[#4ade80]" :
+                                                                row.status === "Warning" ? "bg-[#eab308]/10 text-[#facc15]" : "bg-[#ef4444]/10 text-[#f87171]"
+                                                        )}>
+                                                            {row.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Injection Settings */}
+                                <div>
+                                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Settings size={14} /> Inject Settings</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <div className="w-4 h-4 rounded border border-[#06b6d4] bg-[#06b6d4]/20 flex items-center justify-center">
+                                                    <CheckCircle2 size={12} className="text-[#06b6d4]" />
+                                                </div>
+                                                <span className="text-xs text-[#cbd5e1] group-hover:text-white">Inject as Draft Content</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <div className="w-4 h-4 rounded border border-[#334155] bg-[#0f111a]"></div>
+                                                <span className="text-xs text-[#cbd5e1] group-hover:text-white">Require Manual Approval</span>
+                                            </label>
+                                            <div className="pt-1">
+                                                <p className="text-xs text-[#94a3b8] mb-1">Timezone for Schedule</p>
+                                                <select className="w-full bg-[#161a29] border border-[#1e293b] rounded-lg px-2 py-1.5 text-xs text-white outline-none">
+                                                    <option>Auto-detect (Manual)</option>
+                                                    <option>UTC+00:00</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3 border-l border-[#1e293b] pl-4">
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <div className="w-4 h-4 rounded border border-[#06b6d4] bg-[#06b6d4]/20 flex items-center justify-center">
+                                                    <CheckCircle2 size={12} className="text-[#06b6d4]" />
+                                                </div>
+                                                <span className="text-xs text-[#cbd5e1] group-hover:text-white">Auto-run Workflow Engine</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <div className="w-4 h-4 rounded border border-[#334155] bg-[#0f111a]"></div>
+                                                <span className="text-xs text-[#cbd5e1] group-hover:text-white">Schedule automatically</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t border-[#1e293b] bg-[#0f111a] flex justify-between items-center">
+                                <button onClick={() => setShowUploadModal(false)} className="text-[#94a3b8] hover:text-white text-xs font-semibold px-4 py-2">Cancel</button>
+                                <button
+                                    onClick={() => setShowUploadModal(false)}
+                                    className="bg-gradient-to-r from-[#8b5cf6] to-[#06b6d4] text-white px-6 py-2 rounded-xl font-bold text-xs shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all flex items-center gap-2"
+                                >
+                                    <Zap size={14} /> Inject 15 Entries
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Platform Distribution */}
-            <div className="glass-card p-6 lg:col-span-2">
-                <h3 className="text-base font-bold mb-4">🌐 Platform Distribution</h3>
-                {platformEntries.length === 0 ? (
-                    <p className="text-sm" style={{ color: "var(--zaytri-text-dim)" }}>No data yet</p>
-                ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {platformEntries.map(([platform, count]) => {
-                            const meta = PLATFORM_META[platform] || { icon: "🌐", color: "#94a3b8", label: platform };
-                            return (
-                                <div
-                                    key={platform}
-                                    className="p-4 rounded-xl text-center"
-                                    style={{
-                                        background: `${meta.color}11`,
-                                        border: `1px solid ${meta.color}33`,
-                                    }}
-                                >
-                                    <span className="text-2xl block mb-2">{meta.icon}</span>
-                                    <p className="text-sm font-semibold" style={{ color: meta.color }}>
-                                        {count}
-                                    </p>
-                                    <p className="text-[10px] mt-1" style={{ color: "var(--zaytri-text-dim)" }}>
-                                        {meta.label}
-                                    </p>
-                                </div>
-                            );
-                        })}
+            {/* Right Panel - Rules & Stats */}
+            <div className="w-80 flex flex-col bg-[#0a0c10] border-l border-[#1e293b] flex-shrink-0 z-10 overflow-y-auto custom-scrollbar">
+
+                {/* Automation Rules */}
+                <div className="p-5 border-b border-[#1e293b]">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Zap size={14} className="text-[#eab308]" /> Automation Rules
+                        </h3>
                     </div>
-                )}
+                    <p className="text-[10px] text-[#94a3b8] mb-4">Create recurring content generation rules</p>
+
+                    <button className="w-full flex items-center justify-center gap-2 bg-[#1e293b] hover:bg-[#334155] border border-[#334155] text-white px-4 py-2 rounded-xl text-xs font-bold transition-all mb-4">
+                        <Plus size={14} /> New Rule
+                    </button>
+
+                    <div className="space-y-3">
+                        {MOCK_RULES.map((rule) => (
+                            <div key={rule.id} className="bg-[#161a29] border border-[#1e293b] rounded-xl p-3">
+                                <div className="flex items-start justify-between mb-1.5">
+                                    <span className="text-xs font-bold text-white">{rule.title}</span>
+                                    <IconButton icon={MoreVertical} className="h-4 w-4 text-[#64748b] hover:text-white" />
+                                </div>
+                                <p className="text-[10px] text-[#94a3b8] mb-2 leading-tight">{rule.desc}</p>
+                                <div className="flex items-center justify-between mt-auto">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#06b6d4] bg-[#06b6d4]/10 px-1.5 py-0.5 rounded">
+                                        {rule.brand}
+                                    </span>
+                                    <ToggleSwitch checked={rule.active} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Usage Stats Widget */}
+                <div className="p-5">
+                    <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                        <Activity size={14} className="text-[#a855f7]" /> Usage Stats
+                    </h3>
+                    <div className="bg-[#161a29] border border-[#1e293b] p-4 rounded-xl relative overflow-hidden">
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <div className="text-xs font-bold text-white mb-0.5">150</div>
+                                <div className="text-[9px] text-[#94a3b8]">Total generated entries</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-[#4ade80]">8743</div>
+                                <div className="text-[9px] text-[#94a3b8]">Live media viewed</div>
+                            </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-[#1e293b]">
+                            <div className="text-lg font-bold text-white mb-0.5">$4.32</div>
+                            <div className="text-[9px] text-[#94a3b8]">Estimated cost saved</div>
+                        </div>
+
+                        {/* Subtle background graphic */}
+                        <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-gradient-to-br from-[#06b6d4]/10 to-[#8b5cf6]/10 rounded-full blur-xl pointer-events-none" />
+                    </div>
+                </div>
+
             </div>
+
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #334155; }
+            `}} />
         </div>
     );
 }
+
+// Icon fallbacks that were missing natively
+function Settings(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>; }
+function Activity(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>; }

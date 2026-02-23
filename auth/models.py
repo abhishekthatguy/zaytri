@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
+from utils.time import utc_now
 
 
 # ─── Enums ───────────────────────────────────────────────────────────────────
@@ -64,8 +65,8 @@ class User(Base):
     last_login_ip = Column(String(50), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
@@ -87,7 +88,7 @@ class OAuthAccount(Base):
     provider_email = Column(String(255), nullable=True)
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Constraints
     __table_args__ = (
@@ -112,7 +113,7 @@ class OTPCode(Base):
     max_attempts = Column(Integer, default=5)
     is_used = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     user = relationship("User", back_populates="otp_codes")
@@ -128,7 +129,7 @@ class PasswordResetToken(Base):
     token = Column(String(255), unique=True, nullable=False, index=True)
     is_used = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     user = relationship("User", back_populates="password_resets")
@@ -146,7 +147,7 @@ class LoginAttempt(Base):
     user_agent = Column(String(500), nullable=True)
     success = Column(Boolean, default=False)
     failure_reason = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     user = relationship("User", back_populates="login_history")

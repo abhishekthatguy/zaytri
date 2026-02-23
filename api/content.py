@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
+from utils.time import utc_now
 
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +52,7 @@ async def get_content_stats(
 
     # Recent published (last 7 days)
     from datetime import timedelta
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = utc_now() - timedelta(days=7)
     recent_result = await db.execute(
         select(func.count()).select_from(Schedule).where(
             Schedule.is_published == True,
@@ -184,7 +185,7 @@ async def approve_content(
         raise HTTPException(status_code=404, detail="Content not found")
 
     content.status = ContentStatus.APPROVED
-    content.updated_at = datetime.utcnow()
+    content.updated_at = utc_now()
     await db.flush()
     await db.refresh(content)
 
@@ -205,7 +206,7 @@ async def reject_content(
         raise HTTPException(status_code=404, detail="Content not found")
 
     content.status = ContentStatus.DRAFT
-    content.updated_at = datetime.utcnow()
+    content.updated_at = utc_now()
     await db.flush()
 
     return {"status": "success", "message": "Content rejected and set to draft"}
@@ -236,7 +237,7 @@ async def edit_content(
         if value is not None:
             setattr(content, field, value)
 
-    content.updated_at = datetime.utcnow()
+    content.updated_at = utc_now()
     await db.flush()
     await db.refresh(content)
 
@@ -295,8 +296,8 @@ async def publish_now(
         schedule = Schedule(
             content_id=content.id,
             platform=PlatformEnum(platform_name),
-            scheduled_at=datetime.utcnow(),
-            published_at=datetime.utcnow(),
+            scheduled_at=utc_now(),
+            published_at=utc_now(),
             is_published=True,
             platform_post_id=post_id,
         )
@@ -304,7 +305,7 @@ async def publish_now(
 
         # Update content status
         content.status = ContentStatus.PUBLISHED
-        content.updated_at = datetime.utcnow()
+        content.updated_at = utc_now()
         await db.flush()
 
         return {
@@ -322,7 +323,7 @@ async def publish_now(
             await fail_session.execute(
                 update(Content)
                 .where(Content.id == content_id)
-                .values(status=ContentStatus.FAILED, updated_at=datetime.utcnow())
+                .values(status=ContentStatus.FAILED, updated_at=utc_now())
             )
             await fail_session.commit()
 
@@ -346,8 +347,8 @@ async def delete_content(
         raise HTTPException(status_code=404, detail="Content not found")
 
     content.status = ContentStatus.DELETED
-    content.deleted_at = datetime.utcnow()
-    content.updated_at = datetime.utcnow()
+    content.deleted_at = utc_now()
+    content.updated_at = utc_now()
     
     await db.flush()
     return {"status": "success", "message": "Content moved to trash"}

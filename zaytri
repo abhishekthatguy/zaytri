@@ -206,19 +206,69 @@ cmd_config() {
 
     echo -e "${BOLD}Current Configuration${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    echo -e "${CYAN}${BOLD}[ System ]${NC}"
     echo "  Install Dir:    ${ZAYTRI_HOME}"
+    echo "  Environment:    ${APP_ENV:-development}"
+    echo "  Debug Mode:     ${APP_DEBUG:-true}"
+    echo "  Log Level:      ${LOG_LEVEL:-INFO}"
     echo ""
+
+    echo -e "${CYAN}${BOLD}[ Ports & Endpoints ]${NC}"
     echo "  Backend Port:   ${BACKEND_PORT}"
     echo "  Frontend Port:  ${FRONTEND_PORT}"
     echo "  Redis Port:     ${REDIS_PORT}"
     echo "  Postgres Port:  ${POSTGRES_PORT}"
     echo "  Ollama Port:    ${OLLAMA_PORT}"
-    echo ""
     echo "  API URL:        ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT}}"
-    echo "  Redis URL:      ${REDIS_URL:-redis://localhost:${REDIS_PORT}/0}"
-    echo "  Ollama Host:    ${OLLAMA_HOST:-http://localhost:${OLLAMA_PORT}}"
     echo ""
-    echo "  .env file:      ${ZAYTRI_HOME}/.env"
+
+    echo -e "${CYAN}${BOLD}[ AI / LLM ]${NC}"
+    echo -e "  Ollama Model:   ${GREEN}${OLLAMA_MODEL:-mistral}${NC} ${DIM}(Host: ${OLLAMA_HOST:-http://localhost:${OLLAMA_PORT}})${NC}"
+    
+    if [ -n "$OPEN_ROUTER_API_KEY" ]; then
+        echo -e "  OpenRouter:     ${GREEN}✓ Enabled${NC} ${DIM}(****${OPEN_ROUTER_API_KEY: -4})${NC}"
+    else
+        echo -e "  OpenRouter:     ${RED}✗ Disabled${NC}"
+    fi
+    echo ""
+
+    echo -e "${CYAN}${BOLD}[ Database & Cache ]${NC}"
+    if [ -n "$DATABASE_URL" ]; then
+        # Mask password in DATABASE_URL: postgresql+asyncpg://user:pass@host:port/db
+        DB_CLEAN=$(echo "$DATABASE_URL" | sed 's/\/\/.*:.*@/\/\/****:****@/')
+        echo "  Postgres URL:   ${DB_CLEAN}"
+    else
+        echo -e "  Postgres URL:   ${RED}Not Configured${NC}"
+    fi
+    echo "  Redis URL:      ${REDIS_URL:-redis://localhost:${REDIS_PORT}/0}"
+    echo ""
+
+    echo -e "${CYAN}${BOLD}[ Platforms / Integrations ]${NC}"
+    
+    # Function to print integration status
+    print_status() {
+        local label=$1
+        local value=$2
+        printf "  %-15s " "$label:"
+        if [ -n "$value" ] && [ "$value" != "your_api_key" ] && [ "$value" != "your_token" ] && [ "$value" != "your_secret_key" ]; then
+            echo -e "${GREEN}✓ Configured${NC}"
+        else
+            echo -e "${DIM}Not Configured${NC}"
+        fi
+    }
+
+    print_status "Instagram" "$INSTAGRAM_ACCESS_TOKEN"
+    print_status "Facebook"  "$FACEBOOK_ACCESS_TOKEN"
+    print_status "Twitter/X"  "$TWITTER_API_KEY"
+    print_status "WhatsApp"   "$WHATSAPP_ACCESS_TOKEN"
+    print_status "YouTube"    "$YOUTUBE_API_KEY"
+    print_status "LinkedIn"   "$OAUTH_LINKEDIN_CLIENT_ID"
+    print_status "Google"     "$OAUTH_GOOGLE_CLIENT_ID"
+    print_status "GitHub"     "$OAUTH_GITHUB_CLIENT_ID"
+    echo ""
+
+    echo -e "${DIM}.env source: ${ZAYTRI_HOME}/.env${NC}"
     echo ""
 }
 

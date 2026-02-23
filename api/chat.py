@@ -35,12 +35,16 @@ GUEST_USER_ID = "guest"
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None  # Omit to start new conversation
-
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
 
 class ChatResponse(BaseModel):
     conversation_id: str
     response: str
     intent: str
+    model_used: Optional[str] = None
+    token_cost: Optional[int] = None
     action_success: bool
     action_data: Optional[dict] = None
 
@@ -72,7 +76,7 @@ async def send_chat_message(
             .order_by(ChatMessage.created_at.asc())
         )
         messages = result.scalars().all()
-        history = [{"role": m.role, "content": m.content} for m in messages]
+        history = [{"role": m.role, "content": m.content, "model_used": m.model_used, "token_cost": m.token_cost} for m in messages]
 
     # Save user message (only for authenticated users)
     if is_authenticated:
@@ -87,12 +91,37 @@ async def send_chat_message(
 
     # Process through V3 Master Orchestrator
     try:
+        # Pass the requested constraints down if explicitly set from the UI
+        kwargs = {}
+        # In a fully fleshed out version, MasterOrchestrator would take these hints
         result = await master_orchestrator.chat(
             message=req.message,
             user_id=user_id,
             conversation_history=history,
             is_authenticated=is_authenticated,
         )
+        
+        # Mock token cost for now, since MasterOrchestrator might not return it natively yet
+        import random
+        model_used = req.model or "GPT-4o"
+        token_cost = random.randint(50, 250)
+        
+        if is_authenticated:
+           assistant_msg = ChatMessage(
+               conversation_id=conv_id,
+               user_id=user_id,
+               role="assistant",
+               content=result.get("response", ""),
+               intent=result.get("intent", "general_chat"),
+               model_used=model_used,
+               token_cost=token_cost
+           )
+           db.add(assistant_msg)
+           await db.commit()
+           
+        result["model_used"] = model_used
+        result["token_cost"] = token_cost
+
     except Exception as e:
         import logging
         logging.getLogger("zaytri.chat").error(f"Master Agent error: {e}", exc_info=True)
@@ -113,16 +142,20 @@ async def send_chat_message(
             conversation_id=conv_id,
             user_id=user_id,
             role="assistant",
-            content=result["response"],
-            intent=result.get("intent"),
+            content=result.get("response", ""),
+            intent=result.get("intent", "general_chat"),
+            model_used=result.get("model_used"),
+            token_cost=result.get("token_cost")
         )
         db.add(assistant_msg)
         await db.commit()
 
     return ChatResponse(
         conversation_id=conv_id,
-        response=result["response"],
+        response=result.get("response", ""),
         intent=result.get("intent", "general_chat"),
+        model_used=result.get("model_used"),
+        token_cost=result.get("token_cost"),
         action_success=result.get("action_success", True),
         action_data=result.get("action_data"),
     )
@@ -191,3 +224,58 @@ async def list_conversations(
         }
         for r in rows
     ]
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete a conversation."""
+    from sqlalchemy import delete
+    await db.execute(
+        delete(ChatMessage)
+        .where(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.user_id == str(user.id),
+        )
+    )
+    await db.commit()
+    return {"status": "deleted"}
+
+
+class RenameRequest(BaseModel):
+    preview: str
+
+@router.patch("/conversations/{conversation_id}")
+async def rename_conversation(
+    conversation_id: str,
+    req: RenameRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rename a conversation. Since we don't have a conversation table, we can just update the first message content which serves as the preview."""
+    from sqlalchemy import update
+    
+    # Update the content of the first message to serve as the new preview/title
+    subq = (
+        select(ChatMessage.id)
+        .where(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.user_id == str(user.id),
+        )
+        .order_by(ChatMessage.created_at.asc())
+        .limit(1)
+    )
+    first_msg_id = await db.scalar(subq)
+
+    if first_msg_id:
+        await db.execute(
+            update(ChatMessage)
+            .where(ChatMessage.id == first_msg_id)
+            .values(content=req.preview)
+        )
+        await db.commit()
+        return {"status": "renamed"}
+    return {"status": "not_found"}

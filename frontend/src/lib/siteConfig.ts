@@ -8,9 +8,9 @@
 export const siteConfig = {
     // ── Brand ─────────────────────────────────────────────────────
     name: "Zaytri",
-    tagline: "AI-Powered Social Media Automation",
+    tagline: "AI Agent Orchestration DEMO System",
     description:
-        "Multi-agent AI system that automates content creation, scheduling, publishing, and engagement across all social media platforms.",
+        "An educational multi-agent architecture demonstration. Explore how AI agents collaborate to automate pipelines using advanced orchestration patterns.",
     logo: "Z",
     version: "1.0.0",
     year: new Date().getFullYear(),
@@ -49,16 +49,14 @@ export const siteConfig = {
 
     // ── Navigation ────────────────────────────────────────────────
     navLinks: [
-        { label: "Features", href: "#features" },
-        { label: "Pricing", href: "#pricing" },
+        { label: "Architecture", href: "#features" },
         { label: "About", href: "/about" },
         { label: "Resources", href: "/resources" },
     ],
 
     footerLinks: {
         product: [
-            { label: "Features", href: "#features" },
-            { label: "Pricing", href: "#pricing" },
+            { label: "Capabilities", href: "#features" },
             { label: "Resources", href: "/resources" },
             { label: "Dashboard", href: "/dashboard" },
         ],
@@ -125,64 +123,8 @@ export const siteConfig = {
     ],
 
     // ── Pricing Plans ──────────────────────────────────────────────
-    pricing: [
-        {
-            name: "Starter",
-            price: "Free",
-            period: "forever",
-            description: "Perfect for exploring Zaytri's capabilities",
-            highlight: false,
-            features: [
-                "1 social media platform",
-                "Ollama (local AI) only",
-                "Basic content creation",
-                "Manual approval workflow",
-                "Community support",
-                "Up to 50 posts/month",
-            ],
-            cta: "Get Started Free",
-            ctaLink: "/signup",
-        },
-        {
-            name: "Pro",
-            price: "$29",
-            period: "/month",
-            description: "For creators and small businesses",
-            highlight: true,
-            badge: "Most Popular",
-            features: [
-                "All 4 platforms",
-                "All AI providers (OpenAI, Gemini, etc.)",
-                "Full 7-agent pipeline",
-                "Auto-approve & auto-publish",
-                "Weekly analytics reports",
-                "Unlimited posts",
-                "Priority support",
-                "Voice & image input",
-            ],
-            cta: "Start Pro Trial",
-            ctaLink: "/signup?plan=pro",
-        },
-        {
-            name: "Enterprise",
-            price: "$99",
-            period: "/month",
-            description: "For agencies and large teams",
-            highlight: false,
-            features: [
-                "Everything in Pro",
-                "Multi-user team access",
-                "Custom AI model fine-tuning",
-                "Dedicated account manager",
-                "Custom workflow builder",
-                "API access & webhooks",
-                "White-label option",
-                "SLA guarantee (99.9%)",
-            ],
-            cta: "Contact Sales",
-            ctaLink: "mailto:hello@zaytri.com?subject=Enterprise%20Plan",
-        },
-    ],
+    // Pricing has been hidden for the architecture learning demo
+    pricing: [],
 
     // ── Agents (for marketing display) ────────────────────────────
     agents: [

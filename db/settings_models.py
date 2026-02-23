@@ -155,5 +155,7 @@ class ChatMessage(Base):
     role = Column(String(20), nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     intent = Column(String(50), nullable=True)  # Classified intent (assistant only)
+    model_used = Column(String(100), nullable=True)
+    token_cost = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

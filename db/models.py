@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
 from db.base_enums import ContentStatus, Platform, PublishMode
+from utils.time import utc_now
 import enum
 
 
@@ -50,8 +51,8 @@ class Content(Base):
 
     # Metadata
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -79,7 +80,7 @@ class Schedule(Base):
     error_message = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     content = relationship("Content", back_populates="schedules")
@@ -101,7 +102,7 @@ class AnalyticsRecord(Base):
     impressions = Column(Integer, default=0)
     engagement_rate = Column(Float, default=0.0)
 
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utc_now)
 
     # Relationships
     content = relationship("Content", back_populates="analytics")
@@ -123,7 +124,7 @@ class EngagementLog(Base):
     is_flagged = Column(Boolean, default=False)  # sensitive/spam
     flag_reason = Column(String(255), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     content = relationship("Content", back_populates="engagements")
