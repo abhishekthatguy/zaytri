@@ -130,19 +130,6 @@ async def send_chat_message(
         model_used = req.model or "GPT-4o"
         token_cost = random.randint(50, 250)
         
-        if is_authenticated:
-           assistant_msg = ChatMessage(
-               conversation_id=conv_id,
-               user_id=user_id,
-               role="assistant",
-               content=result.get("response", ""),
-               intent=result.get("intent", "general_chat"),
-               model_used=model_used,
-               token_cost=token_cost
-           )
-           db.add(assistant_msg)
-           await db.commit()
-           
         result["model_used"] = model_used
         result["token_cost"] = token_cost
 

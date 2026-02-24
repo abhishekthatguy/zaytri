@@ -11,6 +11,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from db.database import init_db, close_db
 
+# ─── Register ALL SQLAlchemy models ──────────────────────────────────────────
+# Must be imported BEFORE any router imports, so relationship("User"),
+# relationship("SocialConnection"), etc. can be resolved during mapper config.
+import auth.models  # noqa: F401 — registers User, OAuth, OTP, etc.
+import db.models     # noqa: F401 — registers Content, etc.
+import db.settings_models  # noqa: F401 — registers Settings, Chat, DocumentEmbedding, etc.
+import db.social_connections  # noqa: F401 — registers SocialConnection
+import db.whatsapp_approval   # noqa: F401 — registers WhatsAppApproval
+import db.calendar_models     # noqa: F401 — registers CalendarUpload, CalendarEntry
+import db.task_models          # noqa: F401 — registers TaskExecution
+
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
@@ -26,15 +37,6 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
     # Startup
     logger.info("🚀 Starting Zaytri...")
-
-    # Import all models BEFORE init_db so SQLAlchemy knows about them
-    import auth.models  # noqa: F401 — registers User, OAuth, OTP, etc.
-    import db.models     # noqa: F401 — registers Content, etc.
-    import db.settings_models  # noqa: F401 — registers Settings, Chat, etc.
-    import db.social_connections  # noqa: F401 — registers SocialConnection
-    import db.whatsapp_approval   # noqa: F401 — registers WhatsAppApproval
-    import db.calendar_models     # noqa: F401 — registers CalendarUpload, CalendarEntry
-    import db.task_models          # noqa: F401 — registers TaskExecution
 
     await init_db()
     logger.info("✅ Database initialized")
@@ -92,6 +94,7 @@ from api.chat import router as chat_router
 from api.social_connections import router as social_connections_router
 from api.whatsapp_approval import router as whatsapp_router
 from api.calendar import router as calendar_router
+from api.embeddings import router as embeddings_router
 
 app.include_router(auth_router)
 app.include_router(workflow_router)
@@ -104,6 +107,7 @@ app.include_router(chat_router)
 app.include_router(social_connections_router)
 app.include_router(whatsapp_router)
 app.include_router(calendar_router)
+app.include_router(embeddings_router)
 
 
 # ─── Health Check ────────────────────────────────────────────────────────────

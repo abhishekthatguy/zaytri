@@ -8,10 +8,11 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
     icon: React.ElementType | string
     tooltip?: string
     variant?: "default" | "danger" | "success" | "primary" | "ghost"
+    size?: "sm" | "md" | "lg"
 }
 
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-    ({ className, icon: Icon, tooltip, variant = "default", ...props }, ref) => {
+    ({ className, icon: Icon, tooltip, variant = "default", size = "md", ...props }, ref) => {
 
         // Convert string emojis to standard standard icons, or support both
         const variantStyles = {
@@ -26,13 +27,14 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
             <button
                 ref={ref}
                 className={cn(
-                    "inline-flex items-center justify-center p-2 rounded-lg text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+                    "inline-flex items-center justify-center rounded-lg text-sm transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
                     variantStyles[variant],
+                    size === "sm" ? "p-1.5" : size === "lg" ? "p-3" : "p-2",
                     className
                 )}
                 {...props}
             >
-                {typeof Icon === 'string' ? <span>{Icon}</span> : <Icon size={16} />}
+                {typeof Icon === 'string' ? <span>{Icon}</span> : <Icon size={size === "sm" ? 14 : size === "lg" ? 20 : 16} />}
             </button>
         )
 

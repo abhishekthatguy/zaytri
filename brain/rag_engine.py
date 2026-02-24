@@ -534,12 +534,15 @@ class RAGEngine:
     ) -> Dict[str, Any]:
         """
         Generate and store vector embeddings for all brand knowledge.
-        This indexes knowledge sources and brand settings into document_embeddings.
+        Smart upsert logic:
+          - IF content_hash changed → DELETE old embeddings for that source, INSERT new
+          - ELSE → skip (no re-embed needed)
+          - Cleans up stale embeddings for sources that no longer exist
         """
         if not brand_id:
             raise ValueError("brand_id is required")
 
-        results = {"embedded": 0, "skipped": 0, "errors": 0, "time_ms": 0}
+        results = {"embedded": 0, "skipped": 0, "deleted_stale": 0, "errors": 0, "time_ms": 0}
         embed_start = time.perf_counter()
 
         async def _run(sess: AsyncSession):
@@ -553,9 +556,10 @@ class RAGEngine:
 
             provider = get_embedding_provider()
 
-            # Collect all text to embed
+            # ── Step 1: Collect all current text to embed ─────────────
+            # Each entry: (text, source_name, source_type, hash, metadata)
             texts_to_embed: List[Tuple[str, str, str, str, Dict]] = []
-            # (text, source_name, source_type, hash, metadata)
+            current_source_names = set()
 
             # Knowledge sources
             sources = (await sess.execute(
@@ -569,6 +573,7 @@ class RAGEngine:
 
             for ks in sources:
                 if ks.content_summary:
+                    current_source_names.add(ks.name)
                     chunks = chunk_text(ks.content_summary)
                     for i, chunk in enumerate(chunks):
                         c_hash = content_hash(chunk)
@@ -587,38 +592,95 @@ class RAGEngine:
                 brand_docs.append(("Target Audience", f"Target Audience for {brand.brand_name}: {brand.target_audience}"))
 
             for name, text in brand_docs:
+                current_source_names.add(name)
                 c_hash = content_hash(text)
                 texts_to_embed.append((
                     text, name, "brand_config", c_hash,
                     {"source": "brand_settings"},
                 ))
 
-            if not texts_to_embed:
-                results["skipped"] = 0
-                return
+            # ── Step 2: Get existing embeddings for this brand ────────
+            existing_rows = (await sess.execute(
+                select(DocumentEmbedding.id, DocumentEmbedding.content_hash, DocumentEmbedding.source_name).where(
+                    DocumentEmbedding.brand_id == brand_id
+                )
+            )).fetchall()
 
-            # Check existing hashes to skip duplicates
-            existing_hashes = set()
-            existing = (await sess.execute(
+            existing_hashes = {row.content_hash for row in existing_rows}
+            existing_source_names = {row.source_name for row in existing_rows}
+
+            # ── Step 3: Delete stale embeddings (sources that no longer exist) ──
+            stale_sources = existing_source_names - current_source_names
+            if stale_sources:
+                for stale_name in stale_sources:
+                    del_result = await sess.execute(
+                        DocumentEmbedding.__table__.delete().where(
+                            and_(
+                                DocumentEmbedding.brand_id == brand_id,
+                                DocumentEmbedding.source_name == stale_name,
+                            )
+                        )
+                    )
+                    results["deleted_stale"] += del_result.rowcount
+                    logger.info(f"Deleted {del_result.rowcount} stale embeddings for source '{stale_name}'")
+
+            # ── Step 4: Identify new hashes and changed sources ───────
+            new_hashes = {h for _, _, _, h, _ in texts_to_embed}
+
+            # Sources whose content has changed: they have chunks with NEW hashes
+            # that don't exist in the DB yet → delete old chunks for those sources, then insert
+            changed_source_names = set()
+            for text, source_name, source_type, c_hash, metadata in texts_to_embed:
+                if c_hash not in existing_hashes:
+                    changed_source_names.add(source_name)
+
+            # Delete old embeddings for sources that have changed content
+            if changed_source_names:
+                for src_name in changed_source_names:
+                    del_result = await sess.execute(
+                        DocumentEmbedding.__table__.delete().where(
+                            and_(
+                                DocumentEmbedding.brand_id == brand_id,
+                                DocumentEmbedding.source_name == src_name,
+                            )
+                        )
+                    )
+                    if del_result.rowcount > 0:
+                        logger.info(f"Deleted {del_result.rowcount} old embeddings for changed source '{src_name}'")
+
+                await sess.flush()
+
+            # ── Step 5: Filter to only new texts that need embedding ──
+            # Re-fetch existing hashes after deletion
+            existing_after_delete = (await sess.execute(
                 select(DocumentEmbedding.content_hash).where(
                     DocumentEmbedding.brand_id == brand_id
                 )
             )).scalars().all()
-            existing_hashes = set(existing)
+            existing_hashes_after = set(existing_after_delete)
 
-            # Filter new texts
-            new_texts = [(t, n, st, h, m) for t, n, st, h, m in texts_to_embed if h not in existing_hashes]
+            new_texts = [(t, n, st, h, m) for t, n, st, h, m in texts_to_embed if h not in existing_hashes_after]
             results["skipped"] = len(texts_to_embed) - len(new_texts)
 
             if not new_texts:
+                await sess.commit()
                 return
 
-            # Generate embeddings in batch
+            # ── Step 6: Generate embeddings in batch and insert ───────
             try:
                 raw_texts = [t[0] for t in new_texts]
                 vectors = await provider.embed(raw_texts)
 
                 for (text, source_name, source_type, c_hash, metadata), vector in zip(new_texts, vectors):
+                    vec_dim = len(vector) if vector else 0
+
+                    # Both routes (Ollama padded + OpenAI native) should produce 1536D
+                    if vec_dim != EMBEDDING_DIMENSION:
+                        logger.warning(
+                            f"Unexpected dimension: got {vec_dim}D, expected {EMBEDDING_DIMENSION}D. "
+                            f"Source: {source_name}. Provider: {provider.provider_name}"
+                        )
+
                     emb_data = {
                         "brand_id": brand_id,
                         "chunk_text": text,
@@ -626,17 +688,32 @@ class RAGEngine:
                         "content_hash": c_hash,
                         "source_name": source_name,
                         "source_type": source_type,
-                        "embedding_dimension": len(vector) if vector else 0,
+                        "embedding_dimension": EMBEDDING_DIMENSION,
+                        "embedding_provider": provider.provider_name,
+                        "embedding_model": provider.model_name,
                         "metadata_json": metadata,
                     }
+
+                    # Store vector if pgvector is available and dimension matches
                     if hasattr(DocumentEmbedding, "embedding") and DocumentEmbedding.embedding is not None:
-                        emb_data["embedding"] = vector
+                        if vec_dim == EMBEDDING_DIMENSION:
+                            emb_data["embedding"] = vector
+                        else:
+                            logger.warning(
+                                f"Cannot store {vec_dim}D vector in 1536D column for {source_name}. "
+                                f"This should not happen — check {provider.provider_name} padding logic."
+                            )
 
                     embedding = DocumentEmbedding(**emb_data)
                     sess.add(embedding)
                     results["embedded"] += 1
 
                 await sess.commit()
+                logger.info(
+                    f"Embedded {results['embedded']} chunks for brand {brand_id} "
+                    f"via {provider.provider_name}/{provider.model_name} "
+                    f"(skipped={results['skipped']}, deleted_stale={results['deleted_stale']})"
+                )
             except Exception as e:
                 logger.error(f"Embedding generation failed: {e}")
                 results["errors"] += 1
@@ -674,9 +751,7 @@ class RAGEngine:
         system_prompt = self._build_system_prompt(rag_result)
         full_prompt = f"SYSTEM:\n{system_prompt}\n\nUSER QUESTION:\n{query}"
 
-        # TODO: REMOVE BEFORE PRODUCTION — Debug print of final prompt
-        print("FINAL PROMPT SENT TO LLM:")
-        print(full_prompt)
+        logger.debug(f"Debug pipeline prompt built ({len(full_prompt)} chars)")
 
         pipeline_end = time.perf_counter()
 

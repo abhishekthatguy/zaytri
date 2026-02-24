@@ -1,25 +1,34 @@
 """
-Zaytri — Embedding Utility
+Zaytri — Hybrid Embedding Utility (Architecture V2)
 Generates and manages vector embeddings for RAG knowledge sources.
-Supports OpenAI embeddings (text-embedding-3-small) with Ollama fallback.
+
+Hybrid Architecture:
+  - Free tier: Ollama nomic-embed-text (768D native → zero-padded to 1536D)
+  - Pro tier:  OpenAI text-embedding-3-small (native 1536D)
+  - Both routes produce 1536D vectors for the same pgvector column
+
+Provider selection:
+  if OPENAI_API_KEY is configured → Pro route (OpenAI)
+  else                            → Free route (Ollama, zero-padded to 1536D)
 """
 
 import hashlib
 import logging
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import httpx
 import numpy as np
 
 logger = logging.getLogger("brain.embeddings")
 
-# ─── Constants ───────────────────────────────────────────────────────────────
+# ─── Constants (LOCKED) ─────────────────────────────────────────────────────
 
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSION = 1536  # text-embedding-3-small default
-OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
-OLLAMA_EMBEDDING_DIMENSION = 768
+EMBEDDING_DIMENSION = 1536  # LOCKED at 1536D for BOTH routes
+OPENAI_MODEL = "text-embedding-3-small"
+OPENAI_NATIVE_DIM = 1536
+OLLAMA_MODEL = "nomic-embed-text"
+OLLAMA_NATIVE_DIM = 768
 MAX_CHUNK_SIZE = 8000  # characters per chunk
 
 
@@ -64,6 +73,19 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def _pad_to_1536(vector: List[float]) -> List[float]:
+    """
+    Zero-pad a vector to 1536 dimensions.
+    Used by Ollama route (768D → 1536D) so both routes
+    store in the same pgvector column.
+    """
+    current_dim = len(vector)
+    if current_dim >= EMBEDDING_DIMENSION:
+        return vector[:EMBEDDING_DIMENSION]
+    # Zero-pad the remaining dimensions
+    return vector + [0.0] * (EMBEDDING_DIMENSION - current_dim)
+
+
 # ─── Embedding Providers ────────────────────────────────────────────────────
 
 class EmbeddingProvider:
@@ -74,23 +96,41 @@ class EmbeddingProvider:
 
     @property
     def dimension(self) -> int:
+        """Always returns 1536 — LOCKED dimension for pgvector."""
+        return EMBEDDING_DIMENSION
+
+    @property
+    def provider_name(self) -> str:
+        """Provider identifier for provenance tracking."""
+        raise NotImplementedError
+
+    @property
+    def model_name(self) -> str:
+        """Model identifier for provenance tracking."""
         raise NotImplementedError
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """Generate embeddings using OpenAI text-embedding-3-small."""
+    """
+    Pro Embedding Route — OpenAI text-embedding-3-small.
+    Native 1536D output, no padding needed.
+    Requires: OPENAI_API_KEY (set for paid tier)
+    """
 
-    def __init__(self, api_key: str, model: str = EMBEDDING_MODEL):
+    def __init__(self, api_key: str, model: str = OPENAI_MODEL):
         self.api_key = api_key
         self.model = model
-        self._dimension = EMBEDDING_DIMENSION
 
     @property
-    def dimension(self) -> int:
-        return self._dimension
+    def provider_name(self) -> str:
+        return "openai"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for a batch of texts."""
+        """Generate 1536D embeddings via OpenAI API."""
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=self.api_key)
@@ -99,26 +139,39 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 input=texts,
                 model=self.model,
             )
-            return [item.embedding for item in response.data]
+            vectors = [item.embedding for item in response.data]
+            logger.debug(f"OpenAI embedded {len(texts)} texts → {len(vectors[0])}D")
+            return vectors
         except Exception as e:
             logger.error(f"OpenAI embedding failed: {e}")
             raise
 
 
 class OllamaEmbeddingProvider(EmbeddingProvider):
-    """Generate embeddings using local Ollama (nomic-embed-text)."""
+    """
+    Free Embedding Route — Ollama nomic-embed-text.
+    Native 768D output, zero-padded to 1536D for pgvector compatibility.
+    Config: OLLAMA_API_URL=http://localhost:11434 (set for free tier)
+    """
 
-    def __init__(self, host: str = "http://localhost:11434", model: str = OLLAMA_EMBEDDING_MODEL):
+    def __init__(self, host: str = "http://localhost:11434", model: str = OLLAMA_MODEL):
         self.host = host.rstrip("/")
         self.model = model
-        self._dimension = OLLAMA_EMBEDDING_DIMENSION
+        self._native_dim = OLLAMA_NATIVE_DIM
 
     @property
-    def dimension(self) -> int:
-        return self._dimension
+    def provider_name(self) -> str:
+        return "ollama"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings one at a time via Ollama API."""
+        """
+        Generate embeddings via Ollama API, then zero-pad to 1536D.
+        Native dim: 768D → Padded to: 1536D (matches pgvector column).
+        """
         embeddings = []
         async with httpx.AsyncClient(timeout=30.0) as client:
             for text in texts:
@@ -129,55 +182,113 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                     )
                     response.raise_for_status()
                     data = response.json()
-                    embedding = data.get("embedding", [])
-                    if embedding:
-                        embeddings.append(embedding)
-                        if self._dimension != len(embedding):
-                            self._dimension = len(embedding)
+                    raw_embedding = data.get("embedding", [])
+                    if raw_embedding:
+                        # Track native dimension
+                        if self._native_dim != len(raw_embedding):
+                            self._native_dim = len(raw_embedding)
+                        # Zero-pad to 1536D for pgvector column compatibility
+                        padded = _pad_to_1536(raw_embedding)
+                        embeddings.append(padded)
                     else:
                         logger.warning(f"Empty embedding returned for text: {text[:50]}...")
-                        embeddings.append([0.0] * self._dimension)
+                        embeddings.append([0.0] * EMBEDDING_DIMENSION)
                 except Exception as e:
                     logger.error(f"Ollama embedding failed: {e}")
-                    embeddings.append([0.0] * self._dimension)
+                    embeddings.append([0.0] * EMBEDDING_DIMENSION)
+
+        logger.debug(
+            f"Ollama embedded {len(texts)} texts: "
+            f"{self._native_dim}D native → {EMBEDDING_DIMENSION}D padded"
+        )
         return embeddings
 
 
-# ─── Provider Factory ────────────────────────────────────────────────────────
+# ─── Provider Factory (Plan-Based Selection) ────────────────────────────────
 
-def get_embedding_provider() -> EmbeddingProvider:
+def get_embedding_provider(
+    user_plan: Optional[str] = None,
+    force_provider: Optional[str] = None,
+) -> EmbeddingProvider:
     """
-    Get the best available embedding provider.
-    Priority: OpenAI (if API key available) → Ollama (local).
+    Get the embedding provider based on user plan.
+
+    Hybrid Architecture V2:
+      user_plan == "free"  → Ollama nomic-embed-text (768D → padded to 1536D)
+      user_plan == "pro"   → OpenAI text-embedding-3-small (native 1536D)
+      user_plan is None    → fallback to Ollama (free)
+      force_provider       → override for admin/testing ("openai" or "ollama")
+
+    Both routes produce 1536D vectors for the same pgvector column.
     """
     try:
         from config import settings
 
-        # 1. Try OpenAI via stored API key in DB
-        try:
-            from sqlalchemy import create_engine, select
-            from sqlalchemy.orm import Session
-            from db.settings_models import LLMProviderConfig
-            from utils.crypto import decrypt_value
+        # ── Force override (for testing / admin) ──
+        if force_provider == "ollama":
+            logger.info("🆓 Embedding: Ollama (forced) — nomic-embed-text → 1536D padded")
+            return OllamaEmbeddingProvider(host=settings.ollama_host)
+        if force_provider == "openai":
+            api_key = _resolve_openai_key(settings)
+            if api_key:
+                logger.info("💎 Embedding: OpenAI (forced) — text-embedding-3-small → 1536D native")
+                return OpenAIEmbeddingProvider(api_key=api_key)
+            logger.warning("Forced OpenAI but no API key found, falling back to Ollama")
+            return OllamaEmbeddingProvider(host=settings.ollama_host)
 
-            sync_url = settings.database_url.replace("+asyncpg", "").replace("postgresql://", "postgresql://")
-            engine = create_engine(sync_url)
-            with Session(engine) as session:
-                cfg = session.execute(
-                    select(LLMProviderConfig).where(LLMProviderConfig.provider == "openai")
-                ).scalar_one_or_none()
-                if cfg and cfg.api_key_encrypted:
-                    api_key = decrypt_value(cfg.api_key_encrypted)
-                    logger.info("Using OpenAI for embeddings (text-embedding-3-small)")
-                    return OpenAIEmbeddingProvider(api_key=api_key)
-            engine.dispose()
-        except Exception as e:
-            logger.debug(f"Could not load OpenAI key from DB: {e}")
+        # ── Plan-based selection ──
+        if user_plan == "pro":
+            api_key = _resolve_openai_key(settings)
+            if api_key:
+                logger.info("💎 Pro Embedding Route: OpenAI text-embedding-3-small → 1536D native")
+                return OpenAIEmbeddingProvider(api_key=api_key)
+            else:
+                logger.warning(
+                    "⚠️ User is on Pro plan but no OpenAI API key configured. "
+                    "Falling back to Ollama. Add OPENAI_API_KEY to enable pro embeddings."
+                )
+                return OllamaEmbeddingProvider(host=settings.ollama_host)
 
-        # 2. Fallback to Ollama
-        logger.info("Using Ollama for embeddings (nomic-embed-text)")
+        # ── Free route (default) ──
+        logger.info("🆓 Free Embedding Route: Ollama nomic-embed-text → 1536D padded")
         return OllamaEmbeddingProvider(host=settings.ollama_host)
 
     except Exception as e:
-        logger.warning(f"Could not determine embedding provider: {e}")
+        logger.warning(f"Could not determine embedding provider: {e}. Defaulting to Ollama.")
         return OllamaEmbeddingProvider()
+
+
+def _resolve_openai_key(settings) -> Optional[str]:
+    """
+    Try to find an OpenAI API key from multiple sources.
+    Priority: DB config (set via UI) → Environment variable
+    """
+    # 1. Try OpenAI key from DB (set via Settings UI)
+    try:
+        from sqlalchemy import create_engine, select
+        from sqlalchemy.orm import Session
+        from db.settings_models import LLMProviderConfig
+        from utils.crypto import decrypt_value
+
+        sync_url = settings.database_url.replace("+asyncpg", "").replace("postgresql://", "postgresql://")
+        engine = create_engine(sync_url)
+        with Session(engine) as session:
+            cfg = session.execute(
+                select(LLMProviderConfig).where(LLMProviderConfig.provider == "openai")
+            ).scalar_one_or_none()
+            if cfg and cfg.api_key_encrypted:
+                api_key = decrypt_value(cfg.api_key_encrypted)
+                engine.dispose()
+                return api_key
+        engine.dispose()
+    except Exception as e:
+        logger.debug(f"Could not load OpenAI key from DB: {e}")
+
+    # 2. Try environment variable
+    import os
+    env_key = os.getenv("OPENAI_API_KEY")
+    if env_key:
+        return env_key
+
+    return None
+

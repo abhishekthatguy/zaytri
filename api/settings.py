@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,6 +134,83 @@ class KnowledgeSourceResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ─── User Plan ───────────────────────────────────────────────────────────────
+
+class UserPlanRequest(BaseModel):
+    plan: str = Field(..., pattern="^(free|pro)$", description="User plan: 'free' or 'pro'")
+
+class UserPlanResponse(BaseModel):
+    plan: str
+    embedding_provider: str  # which provider is active for this plan
+    embedding_model: str
+    embedding_dimension: int
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# User Plan Endpoints (controls embedding route)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/plan", response_model=UserPlanResponse)
+async def get_user_plan(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's plan and active embedding route.
+    Free = Ollama (768D → 1536D padded, zero cost)
+    Pro  = OpenAI (native 1536D, paid)
+    """
+    from brain.embeddings import get_embedding_provider, EMBEDDING_DIMENSION
+
+    plan = getattr(user, "plan", None)
+    plan_str = plan.value if hasattr(plan, "value") else (plan or "free")
+
+    provider = get_embedding_provider(user_plan=plan_str)
+
+    return UserPlanResponse(
+        plan=plan_str,
+        embedding_provider=provider.provider_name,
+        embedding_model=provider.model_name,
+        embedding_dimension=EMBEDDING_DIMENSION,
+    )
+
+
+@router.put("/plan", response_model=UserPlanResponse)
+async def update_user_plan(
+    request: UserPlanRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Update the user's plan (free/pro).
+    - free: Ollama embeddings (local, zero cost, 768D padded to 1536D)
+    - pro:  OpenAI embeddings (paid, native 1536D, higher quality)
+
+    Changing plan does NOT automatically re-embed existing knowledge.
+    Use POST /settings/knowledge/reindex to re-embed with the new provider.
+    """
+    from auth.models import UserPlan
+    from brain.embeddings import get_embedding_provider, EMBEDDING_DIMENSION
+
+    user.plan = UserPlan(request.plan)
+    user.updated_at = utc_now()
+    await db.flush()
+    await db.refresh(user)
+
+    provider = get_embedding_provider(user_plan=request.plan)
+
+    logger.info(f"User {user.id} plan changed to '{request.plan}' → {provider.provider_name}")
+
+    return UserPlanResponse(
+        plan=request.plan,
+        embedding_provider=provider.provider_name,
+        embedding_model=provider.model_name,
+        embedding_dimension=EMBEDDING_DIMENSION,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -694,10 +771,11 @@ async def list_knowledge_sources(
 @router.post("/knowledge", response_model=KnowledgeSourceResponse)
 async def create_knowledge_source(
     request: KnowledgeSourceRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Add a new knowledge source."""
+    """Add a new knowledge source and trigger re-indexing."""
     source = KnowledgeSource(
         user_id=user.id,
         brand_id=request.brand_id,
@@ -710,6 +788,12 @@ async def create_knowledge_source(
     db.add(source)
     await db.flush()
     await db.refresh(source)
+
+    # Trigger async re-indexing if brand is set and content exists
+    if source.brand_id and source.content_summary:
+        background_tasks.add_task(_reindex_brand, str(source.brand_id))
+        logger.info(f"Knowledge source created, queued re-index for brand {source.brand_id}")
+
     return source
 
 
@@ -717,10 +801,11 @@ async def create_knowledge_source(
 async def update_knowledge_source(
     source_id: UUID,
     request: KnowledgeSourceRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Update an existing knowledge source."""
+    """Update an existing knowledge source and trigger re-indexing."""
     result = await db.execute(
         select(KnowledgeSource).where(
             KnowledgeSource.user_id == user.id,
@@ -731,6 +816,7 @@ async def update_knowledge_source(
     if not source:
         raise HTTPException(status_code=404, detail="Knowledge source not found")
 
+    old_brand_id = str(source.brand_id) if source.brand_id else None
     source.brand_id = request.brand_id
     source.source_type = request.source_type
     source.name = request.name
@@ -741,16 +827,28 @@ async def update_knowledge_source(
 
     await db.flush()
     await db.refresh(source)
+
+    # Re-index affected brand(s)
+    brands_to_reindex = set()
+    if source.brand_id:
+        brands_to_reindex.add(str(source.brand_id))
+    if old_brand_id:
+        brands_to_reindex.add(old_brand_id)
+    for bid in brands_to_reindex:
+        background_tasks.add_task(_reindex_brand, bid)
+    logger.info(f"Knowledge source updated, queued re-index for brands: {brands_to_reindex}")
+
     return source
 
 
 @router.delete("/knowledge/{source_id}")
 async def delete_knowledge_source(
     source_id: UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Remove a knowledge source."""
+    """Remove a knowledge source and trigger re-indexing."""
     result = await db.execute(
         select(KnowledgeSource).where(
             KnowledgeSource.user_id == user.id,
@@ -761,6 +859,56 @@ async def delete_knowledge_source(
     if not source:
         raise HTTPException(status_code=404, detail="Knowledge source not found")
 
+    brand_id = str(source.brand_id) if source.brand_id else None
     await db.delete(source)
     await db.flush()
+
+    # Re-index the brand to clean up stale embeddings
+    if brand_id:
+        background_tasks.add_task(_reindex_brand, brand_id)
+        logger.info(f"Knowledge source deleted, queued re-index for brand {brand_id}")
+
     return {"status": "success", "message": "Knowledge source deleted"}
+
+
+@router.post("/knowledge/reindex")
+async def reindex_knowledge(
+    brand_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Manually trigger re-indexing of brand knowledge embeddings."""
+    from brain.rag_engine import get_rag_engine
+    engine = get_rag_engine()
+
+    if brand_id:
+        # Re-index specific brand
+        result = await engine.embed_brand_knowledge(brand_id)
+        return {"status": "success", "brand_id": brand_id, "result": result}
+    else:
+        # Re-index all brands for this user
+        from db.settings_models import BrandSettings
+        brands = await db.execute(
+            select(BrandSettings).where(BrandSettings.user_id == user.id)
+        )
+        results = {}
+        for brand in brands.scalars().all():
+            bid = str(brand.id)
+            try:
+                res = await engine.embed_brand_knowledge(bid)
+                results[brand.brand_name] = res
+            except Exception as e:
+                results[brand.brand_name] = {"error": str(e)}
+        return {"status": "success", "results": results}
+
+
+async def _reindex_brand(brand_id: str):
+    """Background task: re-index embeddings for a brand."""
+    import asyncio
+    try:
+        from brain.rag_engine import get_rag_engine
+        engine = get_rag_engine()
+        result = await engine.embed_brand_knowledge(brand_id)
+        logger.info(f"Background re-index complete for brand {brand_id}: {result}")
+    except Exception as e:
+        logger.error(f"Background re-index failed for brand {brand_id}: {e}")

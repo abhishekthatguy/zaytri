@@ -33,6 +33,11 @@ class OTPPurpose(str, enum.Enum):
     VERIFY_PHONE = "verify_phone"
 
 
+class UserPlan(str, enum.Enum):
+    FREE = "free"
+    PRO = "pro"
+
+
 # ─── User Model ──────────────────────────────────────────────────────────────
 
 class User(Base):
@@ -47,6 +52,12 @@ class User(Base):
     # Profile
     display_name = Column(String(200), nullable=True)
     avatar_url = Column(String(500), nullable=True)
+
+    # Plan — controls embedding route (free=Ollama, pro=OpenAI)
+    plan = Column(
+        SAEnum(UserPlan, values_callable=lambda x: [e.value for e in x]),
+        default=UserPlan.FREE, nullable=False, server_default="free"
+    )
 
     # Status
     is_active = Column(Boolean, default=True)

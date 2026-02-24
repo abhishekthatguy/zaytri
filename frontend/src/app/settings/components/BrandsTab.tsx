@@ -20,7 +20,7 @@ import Section from "./shared/Section";
 import StatusBadge from "./shared/StatusBadge";
 import Tooltip from "./shared/Tooltip";
 import { IconButton } from "@/components/ui/IconButton";
-import { Trash2, Settings2, ExternalLink, FileText, Globe, Folder, Database } from "lucide-react";
+import { Trash2, Settings2, ExternalLink, FileText, Globe, Folder, Database, LayoutGrid, List } from "lucide-react";
 
 interface BrandsTabProps {
     onToast: (msg: string, t: "success" | "error") => void;
@@ -28,7 +28,7 @@ interface BrandsTabProps {
 
 const SUB_TABS = [
     { id: "profiles", label: "Profiles", icon: "👤" },
-    { id: "knowledge", label: "Knowledge Sources", icon: "✅" },
+    { id: "knowledge", label: "Knowledge Sources", icon: "🧠" },
     { id: "calendar", label: "Calendar Sources", icon: "📅" },
 ];
 
@@ -48,6 +48,7 @@ export default function BrandsTab({ onToast }: BrandsTabProps) {
     const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
     const [isSubmittingSource, setIsSubmittingSource] = useState(false);
     const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+    const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
     const [confirmDialog, setConfirmDialog] = useState<{
         isOpen: boolean;
@@ -380,19 +381,35 @@ export default function BrandsTab({ onToast }: BrandsTabProps) {
 
                 {activeSubTab === "knowledge" && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                            <div className="flex flex-wrap items-center gap-4">
                                 <h2 className="text-2xl font-bold text-white">Knowledge Sources</h2>
                                 <select
-                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-500/50 transition-colors"
+                                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-500/50 transition-colors cursor-pointer hover:bg-white/10"
                                     value={selectedBrandId}
                                     onChange={(e) => setSelectedBrandId(e.target.value)}
                                 >
-                                    <option value="all" className="bg-slate-900">All Brands</option>
+                                    <option value="all" className="bg-[#0f111a]">All Brands</option>
                                     {brands.map(b => (
-                                        <option key={b.id} value={b.id} className="bg-slate-900">{b.brand_name}</option>
+                                        <option key={b.id} value={b.id} className="bg-[#0f111a]">{b.brand_name}</option>
                                     ))}
                                 </select>
+                                <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-1 ml-2">
+                                    <button
+                                        onClick={() => setViewMode("grid")}
+                                        className={`p-1.5 rounded-md transition-all ${viewMode === "grid" ? "bg-white/10 text-cyan-400" : "text-slate-500 hover:text-slate-300"}`}
+                                        title="Grid View"
+                                    >
+                                        <LayoutGrid size={16} />
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode("list")}
+                                        className={`p-1.5 rounded-md transition-all ${viewMode === "list" ? "bg-white/10 text-cyan-400" : "text-slate-500 hover:text-slate-300"}`}
+                                        title="List View"
+                                    >
+                                        <List size={16} />
+                                    </button>
+                                </div>
                             </div>
                             <button
                                 onClick={() => {
@@ -400,9 +417,9 @@ export default function BrandsTab({ onToast }: BrandsTabProps) {
                                     setSourceForm({ name: "", source_type: "website", url: "", content_summary: "", brand_id: selectedBrandId === "all" ? "" : selectedBrandId });
                                     setIsAddingSource(true);
                                 }}
-                                className="btn-secondary py-1.5 px-4 text-xs font-bold"
+                                className="btn-primary py-2 px-6 text-xs font-bold w-full sm:w-auto flex items-center justify-center gap-2"
                             >
-                                + Add Source
+                                <span className="text-lg">+</span> Add Source
                             </button>
                         </div>
 
@@ -484,122 +501,233 @@ export default function BrandsTab({ onToast }: BrandsTabProps) {
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6" : "flex flex-col gap-3"}>
                             {/* Special Google Drive Config Card (Legacy) */}
                             {driveConfig && (!selectedBrandId || selectedBrandId === "all") && (
-                                <div className={`glass-card p-6 border-white/5 hover:border-cyan-500/30 transition-all ${driveConfig.is_connected ? '!bg-cyan-500/5' : ''}`}>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-3xl">📁</span>
-                                            <div>
-                                                <h4 className="font-bold text-white">Google Drive</h4>
-                                                <p className="text-[10px] text-slate-500">Connected Folder</p>
+                                viewMode === "grid" ? (
+                                    <div className={`glass-card p-6 border-white/5 hover:border-cyan-500/30 transition-all ${driveConfig.is_connected ? '!bg-cyan-500/5' : ''}`}>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-3xl">📁</span>
+                                                <div>
+                                                    <h4 className="font-bold text-white">Google Drive</h4>
+                                                    <p className="text-[10px] text-slate-500">Connected Folder</p>
+                                                </div>
+                                            </div>
+                                            <div className="relative group/status">
+                                                <div className={`w-3 h-3 rounded-full ${driveConfig.is_connected ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" : "bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]"}`} />
+                                                <div className="absolute top-full right-0 mt-2 px-2 py-1 bg-slate-800 text-[10px] text-white rounded opacity-0 group-hover/status:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-white/10">
+                                                    {driveConfig.is_connected ? "Connected" : "Disconnected"}
+                                                </div>
                                             </div>
                                         </div>
-                                        <StatusBadge status={driveConfig.is_connected ? "Connected" : "Disconnected"} />
+                                        <p className="text-[10px] text-slate-400 mb-4 line-clamp-1">
+                                            {driveConfig.folder_url || "No folder connected"}
+                                        </p>
+                                        <div className="flex gap-2">
+                                            <button className="flex-1 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold hover:bg-white/10">Configure</button>
+                                            <IconButton
+                                                icon={Settings2}
+                                                tooltip="Edit Drive Connection"
+                                                onClick={() => { /* TODO: Drive edit modal */ }}
+                                            />
+                                            <IconButton
+                                                icon={Trash2}
+                                                variant="danger"
+                                                tooltip="Disconnect Drive"
+                                                onClick={handleDisconnectDrive}
+                                            />
+                                        </div>
                                     </div>
-                                    <p className="text-[10px] text-slate-400 mb-4 line-clamp-1">
-                                        {driveConfig.folder_url || "No folder connected"}
-                                    </p>
-                                    <div className="flex gap-2">
-                                        <button className="flex-1 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold hover:bg-white/10">Configure</button>
-                                        <IconButton
-                                            icon={Settings2}
-                                            tooltip="Edit Drive Connection"
-                                            onClick={() => { /* TODO: Drive edit modal */ }}
-                                        />
-                                        <IconButton
-                                            icon={Trash2}
-                                            variant="danger"
-                                            tooltip="Disconnect Drive"
-                                            onClick={handleDisconnectDrive}
-                                        />
+                                ) : (
+                                    <div className={`glass-card p-3 px-5 border-white/5 hover:border-cyan-500/30 transition-all flex items-center justify-between gap-4 ${driveConfig.is_connected ? '!bg-cyan-500/5' : ''}`}>
+                                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                                            <span className="text-xl">📁</span>
+                                            <div className="min-w-0">
+                                                <h4 className="font-bold text-white text-sm truncate">Google Drive</h4>
+                                                <p className="text-[10px] text-slate-500 truncate">{driveConfig.folder_url || "No folder connected"}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-6">
+                                            <div className="relative group/status">
+                                                <div className={`w-2 h-2 rounded-full ${driveConfig.is_connected ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"}`} />
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <IconButton
+                                                    icon={Settings2}
+                                                    tooltip="Edit Drive Connection"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => { /* TODO: Drive edit modal */ }}
+                                                />
+                                                <IconButton
+                                                    icon={Trash2}
+                                                    variant="danger"
+                                                    tooltip="Disconnect Drive"
+                                                    size="sm"
+                                                    onClick={handleDisconnectDrive}
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                )
                             )}
 
                             {/* Dynamic Knowledge Sources */}
                             {knowledgeSources.map((source) => (
-                                <div
-                                    key={source.id}
-                                    className={`glass-card p-6 border-white/5 hover:border-cyan-500/30 transition-all flex flex-col group ${expandedSourceId === source.id ? 'ring-1 ring-cyan-500/30' : ''}`}
-                                >
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-3xl">
+                                viewMode === "grid" ? (
+                                    <div
+                                        key={source.id}
+                                        className={`glass-card p-6 border-white/5 hover:border-cyan-500/30 transition-all flex flex-col group ${expandedSourceId === source.id ? 'ring-1 ring-cyan-500/30' : ''}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-3xl">
+                                                    {source.source_type === 'website' ? '🌐' :
+                                                        source.source_type === 'pdf' ? '📄' :
+                                                            source.source_type === 'drive' ? '📁' : '📝'}
+                                                </span>
+                                                <div>
+                                                    <h4 className="font-bold text-white group-hover:text-cyan-400 transition-colors uppercase tracking-tight line-clamp-1" title={source.name}>{source.name}</h4>
+                                                    <p className="text-[10px] text-slate-500">
+                                                        {source.source_type.toUpperCase()} SOURCE
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="relative group/status">
+                                                <div className={`w-3 h-3 rounded-full ${source.is_active ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" : "bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]"}`} />
+                                                <div className="absolute top-full right-0 mt-2 px-2 py-1 bg-slate-800 text-[10px] text-white rounded opacity-0 group-hover/status:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 border border-white/10">
+                                                    {source.is_active ? "Connected" : "Disconnected"}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col gap-1 mb-4">
+                                            {source.url && (
+                                                <a
+                                                    href={source.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[10px] text-cyan-500 hover:underline flex items-center gap-1"
+                                                >
+                                                    🔗 Review Source
+                                                </a>
+                                            )}
+                                            <div className="flex justify-between text-[10px] text-slate-500 mt-1 font-medium">
+                                                <span>Vectors: <span className="text-slate-300">{source.vector_count || 0}</span></span>
+                                                <span>Synced: <span className="text-slate-300">{source.last_indexed_at ? new Date(source.last_indexed_at).toLocaleDateString() : 'Never'}</span></span>
+                                            </div>
+                                        </div>
+
+                                        {expandedSourceId === source.id && (
+                                            <div className="mb-4 p-3 bg-black/20 rounded-lg border border-white/5 animate-in slide-in-from-top-2 duration-200">
+                                                <h5 className="text-[9px] font-bold text-slate-400 uppercase mb-1">Content Summary</h5>
+                                                <p className="text-[10px] text-slate-300 leading-relaxed">
+                                                    {source.content_summary || "No summary available for this source."}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-auto flex gap-2 pt-4 border-t border-white/5">
+                                            <button
+                                                onClick={() => setExpandedSourceId(expandedSourceId === source.id ? null : source.id)}
+                                                className={`flex-1 py-2 border rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${expandedSourceId === source.id ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400' : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-400'}`}
+                                            >
+                                                {expandedSourceId === source.id ? 'Hide Info' : 'Show Details'}
+                                            </button>
+                                            <IconButton
+                                                icon={Settings2}
+                                                tooltip="Configure Source"
+                                                onClick={() => {
+                                                    setEditingSource(source);
+                                                    setSourceForm({
+                                                        name: source.name,
+                                                        source_type: source.source_type,
+                                                        url: source.url || "",
+                                                        content_summary: source.content_summary || "",
+                                                        brand_id: source.brand_id || ""
+                                                    });
+                                                    setIsAddingSource(true);
+                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                }}
+                                            />
+                                            <IconButton
+                                                icon={Trash2}
+                                                variant="danger"
+                                                tooltip="Delete Source"
+                                                disabled={deletingIds.has(source.id)}
+                                                onClick={(e) => handleDeleteSource(e, source.id)}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div
+                                        key={source.id}
+                                        className="glass-card p-3 px-5 border-white/5 hover:border-cyan-500/30 transition-all flex items-center justify-between gap-4 group"
+                                    >
+                                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                                            <span className="text-xl">
                                                 {source.source_type === 'website' ? '🌐' :
                                                     source.source_type === 'pdf' ? '📄' :
                                                         source.source_type === 'drive' ? '📁' : '📝'}
                                             </span>
-                                            <div>
-                                                <h4 className="font-bold text-white group-hover:text-cyan-400 transition-colors uppercase tracking-tight">{source.name}</h4>
-                                                <p className="text-[10px] text-slate-500">
-                                                    {source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1)}
-                                                </p>
+                                            <div className="min-w-0">
+                                                <h4 className="font-bold text-white text-sm truncate group-hover:text-cyan-400 transition-colors" title={source.name}>{source.name}</h4>
+                                                <div className="flex items-center gap-3 mt-0.5">
+                                                    <span className="text-[10px] text-slate-500 uppercase">{source.source_type}</span>
+                                                    <span className="text-[10px] text-slate-600">|</span>
+                                                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                        <Database size={10} /> {source.vector_count || 0} vectors
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <StatusBadge status={source.is_active ? "Connected" : "Disconnected"} />
-                                    </div>
 
-                                    <div className="flex flex-col gap-1 mb-4">
-                                        {source.url && (
-                                            <a
-                                                href={source.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-[10px] text-cyan-500 hover:underline flex items-center gap-1"
-                                            >
-                                                🔗 Review Source
-                                            </a>
-                                        )}
-                                        <div className="flex justify-between text-[9px] text-slate-500 mt-1">
-                                            <span>Vectors: {source.vector_count || 0}</span>
-                                            <span>Synced: {source.last_indexed_at ? new Date(source.last_indexed_at).toLocaleDateString() : 'Never'}</span>
+                                        <div className="flex items-center gap-8">
+                                            {source.url && (
+                                                <a
+                                                    href={source.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="hidden md:block text-[10px] text-cyan-500 hover:underline"
+                                                >
+                                                    View Source ↗
+                                                </a>
+                                            )}
+                                            <div className="relative group/status">
+                                                <div className={`w-2 h-2 rounded-full ${source.is_active ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"}`} />
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <IconButton
+                                                    icon={Settings2}
+                                                    tooltip="Configure Source"
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => {
+                                                        setEditingSource(source);
+                                                        setSourceForm({
+                                                            name: source.name,
+                                                            source_type: source.source_type,
+                                                            url: source.url || "",
+                                                            content_summary: source.content_summary || "",
+                                                            brand_id: source.brand_id || ""
+                                                        });
+                                                        setIsAddingSource(true);
+                                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                    }}
+                                                />
+                                                <IconButton
+                                                    icon={Trash2}
+                                                    variant="danger"
+                                                    tooltip="Delete Source"
+                                                    size="sm"
+                                                    disabled={deletingIds.has(source.id)}
+                                                    onClick={(e) => handleDeleteSource(e, source.id)}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-
-                                    {/* Collapsible Details */}
-                                    {expandedSourceId === source.id && (
-                                        <div className="mb-4 p-3 bg-black/20 rounded-lg border border-white/5 animate-in slide-in-from-top-2 duration-200">
-                                            <h5 className="text-[9px] font-bold text-slate-400 uppercase mb-1">Content Summary</h5>
-                                            <p className="text-[10px] text-slate-300 leading-relaxed">
-                                                {source.content_summary || "No summary available for this source."}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    <div className="mt-auto flex gap-2 pt-4 border-t border-white/5">
-                                        <button
-                                            onClick={() => setExpandedSourceId(expandedSourceId === source.id ? null : source.id)}
-                                            className={`flex-1 py-1.5 border rounded-lg text-[10px] font-bold transition-all ${expandedSourceId === source.id ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400' : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-400'}`}
-                                        >
-                                            {expandedSourceId === source.id ? 'Close Details' : 'View Details'}
-                                        </button>
-                                        <IconButton
-                                            icon={Settings2}
-                                            tooltip="Configure Source"
-                                            onClick={() => {
-                                                setEditingSource(source);
-                                                setSourceForm({
-                                                    name: source.name,
-                                                    source_type: source.source_type,
-                                                    url: source.url || "",
-                                                    content_summary: source.content_summary || "",
-                                                    brand_id: source.brand_id || ""
-                                                });
-                                                setIsAddingSource(true);
-                                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                                            }}
-                                        />
-                                        <IconButton
-                                            icon={Trash2}
-                                            variant="danger"
-                                            tooltip="Delete Source"
-                                            disabled={deletingIds.has(source.id)}
-                                            onClick={(e) => handleDeleteSource(e, source.id)}
-                                        />
-                                    </div>
-                                </div>
+                                )
                             ))}
 
                             {/* Add New Source Placeholder Card */}
@@ -609,10 +737,18 @@ export default function BrandsTab({ onToast }: BrandsTabProps) {
                                     setSourceForm({ name: "", source_type: "website", url: "", content_summary: "", brand_id: selectedBrandId === "all" ? "" : selectedBrandId });
                                     setIsAddingSource(true);
                                 }}
-                                className="border-2 border-dashed border-white/5 rounded-2xl flex flex-col items-center justify-center p-6 text-slate-500 hover:border-cyan-500/30 hover:text-white transition-all group bg-white/[0.02]"
+                                className={viewMode === "grid"
+                                    ? "border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center p-8 text-slate-500 hover:border-cyan-500/40 hover:text-white transition-all group bg-white/[0.02] min-h-[220px]"
+                                    : "border-2 border-dashed border-white/10 rounded-xl flex items-center gap-4 p-4 text-slate-500 hover:border-cyan-500/40 hover:text-white transition-all group bg-white/[0.02]"
+                                }
                             >
-                                <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">➕</span>
-                                <span className="text-xs font-bold uppercase tracking-wider">Add Knowledge Source</span>
+                                <div className={viewMode === "grid"
+                                    ? "w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform group-hover:bg-cyan-500/20 group-hover:text-cyan-400"
+                                    : "w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-cyan-500/20 group-hover:text-cyan-400"
+                                }>
+                                    <span className={viewMode === "grid" ? "text-2xl" : "text-lg"}>+</span>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-widest">Add Knowledge Source</span>
                             </button>
                         </div>
 

@@ -13,7 +13,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from db.database import Base
 from db.base_enums import Platform
-import db.social_connections  # Ensures SQLAlchemy sees SocialConnection for relationship mappings
 
 import os
 try:
@@ -198,7 +197,13 @@ class KnowledgeSource(Base):
 # ─── Document Embeddings (pgvector RAG) ────────────────────────────────────
 
 class DocumentEmbedding(Base):
-    """Vector embeddings for RAG retrieval using pgvector."""
+    """
+    Vector embeddings for RAG retrieval using pgvector.
+    Hybrid Architecture V2:
+      - Free tier: Ollama nomic-embed-text → padded to 1536D
+      - Pro tier:  OpenAI text-embedding-3-small → native 1536D
+      - Both stored in the same vector(1536) column
+    """
     __tablename__ = "document_embeddings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -212,10 +217,13 @@ class DocumentEmbedding(Base):
     source_name = Column(String(255), nullable=False)
     source_type = Column(String(50), nullable=False)  # knowledge_source, brand_config, etc.
 
-    # Vector embedding (1536 dimensions for text-embedding-3-small, 768 for Ollama)
+    # Vector — LOCKED at 1536D for both free and pro tiers
     embedding_dimension = Column(Integer, nullable=False, default=1536)
-    # pgvector column — stores the actual vector for similarity search
-    embedding = Column(Vector(), nullable=True) if Vector else None
+    embedding = Column(Vector(1536), nullable=True) if Vector else None
+
+    # Embedding provenance — tracks which provider generated this embedding
+    embedding_provider = Column(String(50), nullable=True, default="ollama")   # "ollama" | "openai"
+    embedding_model = Column(String(100), nullable=True, default="nomic-embed-text")  # model name
 
     # Metadata
     metadata_json = Column(JSON, nullable=True)

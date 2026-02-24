@@ -194,6 +194,7 @@ async def classify_intent(
     user_context: str = "",
     conversation_history: Optional[List[Dict[str, str]]] = None,
     timeout_seconds: float = 30.0,
+    temperature: Optional[float] = None,
 ) -> IntentResult:
     """
     Classify user intent via LLM.
@@ -205,6 +206,7 @@ async def classify_intent(
         user_context: Pre-built user memory context string
         conversation_history: Recent conversation messages
         timeout_seconds: Max time for LLM call
+        temperature: Override temperature (e.g. 0.0 for deterministic mode)
 
     Returns:
         IntentResult with intent, params, and response
@@ -236,12 +238,15 @@ async def classify_intent(
 
     user_prompt = _build_user_prompt(message, conversation_history, creativity_hint)
 
+    # Use provided temperature or default to 0.3
+    _temp = temperature if temperature is not None else 0.3
+
     try:
         raw = await asyncio.wait_for(
             llm.generate(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                temperature=0.3,
+                temperature=_temp,
                 max_tokens=768,
                 json_mode=True,
             ),
@@ -254,3 +259,4 @@ async def classify_intent(
     except Exception as e:
         logger.error(f"Intent classification failed: {e}")
         raise
+

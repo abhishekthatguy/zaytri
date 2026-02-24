@@ -3,6 +3,10 @@ Zaytri — Master Orchestrator
 Thin coordinator replacing the 1121-line monolith.
 Delegates to: IntentClassifier → BrandResolver → RAGEngine → TaskPlanner → ExecutionController.
 Multi-layer RAG context injection with hallucination guards.
+
+Architecture (per system design):
+  User Query → Embedding Model (OpenAI 1536D) → pgvector Search (per brand) →
+  Retrieved Context → Chat Model (Switchable) → Answer
 """
 
 import json
@@ -52,12 +56,15 @@ class MasterOrchestrator:
     """
     V3 Master Agent — thin orchestrator.
     
-    Flow:
-    1. classify_intent() → IntentResult
-    2. BrandResolver.resolve() → brand context
-    3. TaskPlanner.plan() → TaskExecution record (or None for lightweight)
-    4. ExecutionController.execute() → result
-    5. Return response
+    Flow (per architecture diagram):
+    1. Resolve ALL brands for user (multi-tenant)
+    2. For each brand: pgvector similarity search (1536D OpenAI embeddings)
+    3. Build RAG context block from retrieved chunks
+    4. classify_intent() with RAG context injected
+    5. BrandResolver.resolve() → brand context
+    6. TaskPlanner.plan() → TaskExecution record (or None for lightweight)
+    7. ExecutionController.execute() → result
+    8. Return response via switchable Chat Model
     """
 
     def __init__(self, llm: BaseLLMProvider):
@@ -91,93 +98,127 @@ class MasterOrchestrator:
         # Deterministic mode: force temperature=0 for reproducible output
         _temperature_override = 0.0 if deterministic else None
 
-        # ── 1. Classify intent via LLM ───────────────────────────────
+        # ── 1. Build user memory context ─────────────────────────────
         memory_ctx = user_memory.get_context(user_id)
+
+        # ── 2. Multi-Brand RAG Context Injection ─────────────────────
+        # Per architecture: Query → Embedding (1536D) → pgvector Search
+        # → per-brand tenant isolation → Retrieved Context → Chat Model
+        rag_context_block = ""
+        rag_debug_info = {}
         
-        # --- Multi-RAG specific context injection ---
         if _context_controls.get("brand_memory", True) and is_authenticated:
             try:
                 from db.database import async_session
                 from orchestration.brand_resolver import BrandResolver
-                async with async_session() as session:
-                    resolver = BrandResolver(session)
-                    brands = await resolver.list_brands(user_id)
-                    if brands:
-                        brand_details = []
-                        for b in brands:
-                            info = f"Brand: {b.brand_name}"
-                            b_niche = getattr(b, 'niche', None)
-                            if b_niche: info += f" | Niche: {b_niche}"
-                            if b.target_audience: info += f" | Audience: {b.target_audience}"
-                            brand_details.append(info)
-                        
-                        memory_ctx += "\n\nKNOWLEDGE BASE (Brand Memory):\n" + "\n".join(brand_details)
-            except Exception as e:
-                logger.warning(f"Failed to load brand memory for RAG: {e}")
-        # --------------------------------------------
-        
-        # ── Multi-Layer RAG Context Injection ────────────────────────────
-        rag_context_block = ""
-        rag_debug_info = {}
-        try:
-            from brain.rag_engine import get_rag_engine
-            rag_engine = get_rag_engine()
-            
-            # Resolve brand for RAG
-            async with async_session() as rag_session:
-                from orchestration.brand_resolver import BrandResolver as _BR
-                _resolver = _BR(rag_session)
-                _brand = await _resolver.resolve(user_id, None)
+                from brain.rag_engine import get_rag_engine
                 
-                if _brand and is_authenticated:
-                    rag_start = time.perf_counter()
-                    rag_result = await rag_engine.build_rag_context(
-                        brand_id=str(_brand.id),
-                        query=message,
-                        force_rag=force_rag,
-                        session=rag_session,
-                    )
-                    rag_end = time.perf_counter()
+                rag_engine = get_rag_engine()
+                
+                async with async_session() as rag_session:
+                    resolver = BrandResolver(rag_session)
+                    brands = await resolver.list_brands(user_id)
                     
-                    rag_debug_info = {
-                        "brand": rag_result.brand_name,
-                        "namespace": rag_result.namespace,
-                        "retrieved_docs": len(rag_result.retrieved_chunks),
-                        "similarity_scores": rag_result.similarity_scores,
-                        "is_sufficient": rag_result.is_sufficient,
-                        "retrieval_time_ms": round(rag_result.retrieval_time_ms, 1),
-                    }
-                    
-                    if rag_result.context_block:
-                        rag_context_block = (
-                            "\n\n=== BRAND KNOWLEDGE CONTEXT (RAG) ===\n"
-                            "Use both the KNOWLEDGE BASE (Brand Memory) and the following CONTEXT to answer questions.\n"
-                            "If the combined context is insufficient context for specific brand details, say you don't know.\n\n"
-                            f"CONTEXT:\n{rag_result.context_block}\n"
-                            "=== END CONTEXT ===\n"
-                        )
-                        memory_ctx += rag_context_block
-                    
-                    # Force-RAG: block LLM if no relevant context
-                    if force_rag and not rag_result.is_sufficient:
-                        logger.warning("Force-RAG mode: no sufficient context, blocking LLM")
-                        return {
-                            "intent": "general_chat",
-                            "response": (
-                                "I do not have sufficient brand knowledge to answer this. "
-                                "No relevant brand knowledge found."
-                            ),
-                            "action_success": False,
-                            "action_data": {"rag_blocked": True, **rag_debug_info},
+                    if brands:
+                        all_brand_contexts = []
+                        all_rag_results = []
+                        
+                        for brand in brands:
+                            brand_id = str(brand.id)
+                            
+                            try:
+                                rag_result = await rag_engine.build_rag_context(
+                                    brand_id=brand_id,
+                                    query=message,
+                                    force_rag=False,  # Don't block per-brand; check overall later
+                                    session=rag_session,
+                                )
+                                all_rag_results.append(rag_result)
+                                
+                                # Build brand info line
+                                brand_info = f"Brand: {brand.brand_name}"
+                                if brand.target_audience:
+                                    brand_info += f" | Audience: {brand.target_audience}"
+                                if brand.brand_tone:
+                                    brand_info += f" | Tone: {brand.brand_tone}"
+                                
+                                # Add RAG-retrieved context for this brand
+                                if rag_result.context_block:
+                                    all_brand_contexts.append(
+                                        f"── {brand.brand_name} ──\n"
+                                        f"{brand_info}\n"
+                                        f"Retrieved Knowledge:\n{rag_result.context_block}"
+                                    )
+                                else:
+                                    all_brand_contexts.append(
+                                        f"── {brand.brand_name} ──\n"
+                                        f"{brand_info}\n"
+                                        f"(No matching knowledge found for this query)"
+                                    )
+                            except Exception as e:
+                                logger.warning(f"RAG retrieval failed for brand {brand.brand_name}: {e}")
+                                all_brand_contexts.append(
+                                    f"── {brand.brand_name} ──\n"
+                                    f"(RAG retrieval error)"
+                                )
+                        
+                        # Aggregate RAG debug info
+                        total_chunks = sum(len(r.retrieved_chunks) for r in all_rag_results)
+                        any_sufficient = any(r.is_sufficient for r in all_rag_results)
+                        total_retrieval_ms = sum(r.retrieval_time_ms for r in all_rag_results)
+                        
+                        rag_debug_info = {
+                            "brands_queried": len(brands),
+                            "total_retrieved_chunks": total_chunks,
+                            "any_sufficient": any_sufficient,
+                            "total_retrieval_time_ms": round(total_retrieval_ms, 1),
+                            "per_brand": [
+                                {
+                                    "brand": r.brand_name,
+                                    "namespace": r.namespace,
+                                    "retrieved_docs": len(r.retrieved_chunks),
+                                    "similarity_scores": r.similarity_scores,
+                                    "is_sufficient": r.is_sufficient,
+                                    "search_method": r.search_method,
+                                    "retrieval_time_ms": round(r.retrieval_time_ms, 1),
+                                }
+                                for r in all_rag_results
+                            ],
                         }
-                    
-                    logger.info(
-                        f"RAG injected: {len(rag_result.retrieved_chunks)} chunks, "
-                        f"sufficient={rag_result.is_sufficient}, "
-                        f"retrieval={rag_result.retrieval_time_ms:.1f}ms"
-                    )
-        except Exception as e:
-            logger.warning(f"RAG context injection failed (non-fatal): {e}")
+                        
+                        # Build combined context block
+                        if all_brand_contexts:
+                            combined_context = "\n\n".join(all_brand_contexts)
+                            rag_context_block = (
+                                "\n\n=== BRAND KNOWLEDGE CONTEXT (RAG — pgvector Search) ===\n"
+                                "Use the following brand-specific context to answer questions.\n"
+                                "Each brand's knowledge is isolated for multi-tenant accuracy.\n"
+                                "If the combined context is insufficient for specific details, say you don't know.\n\n"
+                                f"{combined_context}\n"
+                                "=== END CONTEXT ===\n"
+                            )
+                            memory_ctx += rag_context_block
+                        
+                        # Force-RAG: block LLM if no brand has sufficient context
+                        if force_rag and not any_sufficient:
+                            logger.warning("Force-RAG mode: no sufficient context across all brands, blocking LLM")
+                            return {
+                                "intent": "general_chat",
+                                "response": (
+                                    "I do not have sufficient brand knowledge to answer this. "
+                                    "No relevant brand knowledge found across any of your brands."
+                                ),
+                                "action_success": False,
+                                "action_data": {"rag_blocked": True, **rag_debug_info},
+                            }
+                        
+                        logger.info(
+                            f"RAG injected: {total_chunks} total chunks across {len(brands)} brands, "
+                            f"sufficient={any_sufficient}, "
+                            f"retrieval={total_retrieval_ms:.1f}ms"
+                        )
+            except Exception as e:
+                logger.warning(f"RAG context injection failed (non-fatal): {e}")
         # ────────────────────────────────────────────────────────────────
         
         try:
@@ -191,13 +232,6 @@ class MasterOrchestrator:
             
             if _temperature_override is not None:
                 classify_kwargs["temperature"] = _temperature_override
-            
-            # TODO: REMOVE BEFORE PRODUCTION — Debug print of final prompt
-            print("FINAL PROMPT SENT TO LLM:")
-            print(f"User Context (with RAG):\n{memory_ctx}")
-            print(f"Message: {message}")
-            if rag_debug_info:
-                print(f"RAG Debug: {json.dumps(rag_debug_info, indent=2)}")
             
             llm_start = time.perf_counter()
             intent_result = await classify_intent(**classify_kwargs)
@@ -234,7 +268,7 @@ class MasterOrchestrator:
 
         logger.info(f"Classified: intent={intent}, params={list(params.keys())}")
 
-        # ── 2. Auth gate ─────────────────────────────────────────────
+        # ── 3. Auth gate ─────────────────────────────────────────────
         if not is_authenticated and intent not in GUEST_ALLOWED_INTENTS:
             user_memory.record_interaction(user_id, intent, message, params)
             return {
@@ -249,7 +283,7 @@ class MasterOrchestrator:
                 "action_data": {"requires_login": True},
             }
 
-        # ── 3. Execute via orchestration pipeline ────────────────────
+        # ── 4. Execute via orchestration pipeline ────────────────────
         from db.database import async_session
         from orchestration.brand_resolver import BrandResolver
         from orchestration.task_planner import TaskPlanner, LIGHTWEIGHT_INTENTS
@@ -293,7 +327,7 @@ class MasterOrchestrator:
 
             await session.commit()
 
-        # ── 4. Enrich response with action data ─────────────────────
+        # ── 5. Enrich response with action data ─────────────────────
         if action_result.get("data") and intent not in ("help", "general_chat", "introduce"):
             data = action_result["data"]
             if isinstance(data, list) and len(data) > 0:
@@ -307,7 +341,7 @@ class MasterOrchestrator:
                 )
                 llm_response += f"\n\n{items_text}"
 
-        # ── 5. Record interaction & performance logging ────────────────
+        # ── 6. Record interaction & performance logging ────────────────
         user_memory.record_interaction(user_id, intent, message, params)
         
         pipeline_end = time.perf_counter()

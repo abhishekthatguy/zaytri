@@ -7,6 +7,8 @@ Commands:
     zaytri rag-test   --brand <name> --query   Test retrieval
     zaytri rag-debug  --brand <name> --query   Full debug pipeline
     zaytri demo       <brand>                  Deterministic demo run
+    zaytri embed      --brand <name>           Generate embeddings
+    zaytri echo                                Full system diagnostic
 """
 
 import asyncio
@@ -360,6 +362,330 @@ def embed(
             console.print("\n[yellow]⚠ No documents found to embed. Add knowledge sources or brand guidelines first.[/yellow]")
 
     _run_async(_embed())
+
+
+# ─── echo (System Diagnostic) ───────────────────────────────────────────────
+
+@app.command("echo")
+def echo():
+    """
+    Full system diagnostic — test DB, brands, embeddings, and knowledge base.
+    Run this to verify the entire pipeline is healthy.
+    """
+    _print_header("ZAYTRI SYSTEM ECHO — Full Diagnostic")
+
+    async def _echo():
+        from sqlalchemy import select, func, text
+        from db.database import async_session
+        from db.settings_models import BrandSettings, KnowledgeSource, DocumentEmbedding
+        from auth.models import User, UserPlan
+
+        async with async_session() as session:
+
+            # ══════════════════════════════════════════════════════════
+            # 1. DATABASE CONNECTIVITY
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]1. DATABASE CONNECTIVITY[/bold cyan]")
+            _print_separator()
+            try:
+                result = await session.execute(text("SELECT version()"))
+                pg_version = result.scalar()
+                console.print(f"  [green]✓[/green] PostgreSQL connected")
+                console.print(f"  [dim]{pg_version}[/dim]")
+
+                # Check pgvector
+                try:
+                    await session.execute(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))
+                    vec_row = (await session.execute(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))).scalar()
+                    if vec_row:
+                        console.print(f"  [green]✓[/green] pgvector extension: v{vec_row}")
+                    else:
+                        console.print(f"  [yellow]⚠[/yellow] pgvector extension not installed")
+                except Exception:
+                    console.print(f"  [yellow]⚠[/yellow] pgvector check failed")
+            except Exception as e:
+                console.print(f"  [red]✗ Database connection failed: {e}[/red]")
+                return
+
+            # ══════════════════════════════════════════════════════════
+            # 2. USERS & PLANS
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]2. USERS & PLANS[/bold cyan]")
+            _print_separator()
+            users = (await session.execute(select(User))).scalars().all()
+            if users:
+                user_table = Table(show_header=True, padding=(0, 1))
+                user_table.add_column("Username", style="white")
+                user_table.add_column("Email", style="dim")
+                user_table.add_column("Plan", style="cyan")
+                user_table.add_column("Admin", style="yellow")
+                user_table.add_column("Active", style="green")
+
+                for u in users:
+                    plan_val = u.plan.value if hasattr(u.plan, 'value') else str(u.plan or 'free')
+                    plan_style = "bold magenta" if plan_val == "pro" else "cyan"
+                    user_table.add_row(
+                        u.username,
+                        u.email,
+                        f"[{plan_style}]{plan_val}[/{plan_style}]",
+                        "✓" if u.is_admin else "✗",
+                        "✓" if u.is_active else "✗",
+                    )
+                console.print(user_table)
+            else:
+                console.print("  [yellow]⚠ No users found[/yellow]")
+
+            # ══════════════════════════════════════════════════════════
+            # 3. BRANDS
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]3. BRANDS[/bold cyan]")
+            _print_separator()
+            brands = (await session.execute(select(BrandSettings))).scalars().all()
+            if brands:
+                brand_table = Table(show_header=True, padding=(0, 1))
+                brand_table.add_column("#", style="dim", width=3)
+                brand_table.add_column("Brand Name", style="bold white")
+                brand_table.add_column("ID (short)", style="dim")
+                brand_table.add_column("Tone", style="cyan")
+                brand_table.add_column("Audience", style="yellow")
+                brand_table.add_column("Guidelines", style="green")
+
+                for i, b in enumerate(brands, 1):
+                    brand_table.add_row(
+                        str(i),
+                        b.brand_name,
+                        str(b.id)[:8] + "...",
+                        (b.brand_tone or "—")[:30],
+                        (b.target_audience or "—")[:30],
+                        "✓" if b.brand_guidelines else "✗",
+                    )
+                console.print(brand_table)
+            else:
+                console.print("  [yellow]⚠ No brands configured. Create one in Settings → Brands.[/yellow]")
+
+            # ══════════════════════════════════════════════════════════
+            # 4. KNOWLEDGE SOURCES
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]4. KNOWLEDGE SOURCES[/bold cyan]")
+            _print_separator()
+            sources = (await session.execute(select(KnowledgeSource))).scalars().all()
+            if sources:
+                kb_table = Table(show_header=True, padding=(0, 1))
+                kb_table.add_column("#", style="dim", width=3)
+                kb_table.add_column("Name", style="white")
+                kb_table.add_column("Type", style="cyan")
+                kb_table.add_column("Brand", style="yellow")
+                kb_table.add_column("Active", style="green")
+                kb_table.add_column("Content Preview", style="dim", max_width=40)
+
+                for i, src in enumerate(sources, 1):
+                    # Resolve brand name
+                    brand_name = "—"
+                    if src.brand_id:
+                        brand_row = (await session.execute(
+                            select(BrandSettings.brand_name).where(BrandSettings.id == src.brand_id)
+                        )).scalar()
+                        brand_name = brand_row or "—"
+
+                    content_preview = (src.content or "")[:40]
+                    if len(src.content or "") > 40:
+                        content_preview += "..."
+
+                    kb_table.add_row(
+                        str(i),
+                        src.name,
+                        src.source_type or "—",
+                        brand_name,
+                        "[green]✓[/green]" if src.is_active else "[red]✗[/red]",
+                        content_preview or "[dim]empty[/dim]",
+                    )
+                console.print(kb_table)
+            else:
+                console.print("  [yellow]⚠ No knowledge sources. Add them in Settings → Knowledge Base.[/yellow]")
+
+            # ══════════════════════════════════════════════════════════
+            # 5. EMBEDDINGS DATA
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]5. EMBEDDINGS DATA[/bold cyan]")
+            _print_separator()
+
+            total_embeddings = (await session.execute(
+                select(func.count(DocumentEmbedding.id))
+            )).scalar() or 0
+
+            if total_embeddings > 0:
+                emb_table = Table(show_header=True, padding=(0, 1))
+                emb_table.add_column("Metric", style="cyan", width=30)
+                emb_table.add_column("Value", style="white")
+
+                emb_table.add_row("Total Embeddings", str(total_embeddings))
+
+                # Per-brand breakdown
+                brand_counts = (await session.execute(
+                    select(
+                        BrandSettings.brand_name,
+                        func.count(DocumentEmbedding.id)
+                    ).join(
+                        BrandSettings, DocumentEmbedding.brand_id == BrandSettings.id
+                    ).group_by(BrandSettings.brand_name)
+                )).all()
+
+                for bname, cnt in brand_counts:
+                    emb_table.add_row(f"  └ {bname}", str(cnt))
+
+                # Provider breakdown
+                provider_counts = (await session.execute(
+                    select(
+                        DocumentEmbedding.embedding_provider,
+                        func.count(DocumentEmbedding.id)
+                    ).group_by(DocumentEmbedding.embedding_provider)
+                )).all()
+
+                emb_table.add_row("", "")
+                emb_table.add_row("[bold]By Provider[/bold]", "")
+                for prov, cnt in provider_counts:
+                    icon = "💎" if prov == "openai" else "🆓"
+                    emb_table.add_row(f"  {icon} {prov or 'unknown'}", str(cnt))
+
+                # Model breakdown
+                model_counts = (await session.execute(
+                    select(
+                        DocumentEmbedding.embedding_model,
+                        func.count(DocumentEmbedding.id)
+                    ).group_by(DocumentEmbedding.embedding_model)
+                )).all()
+
+                emb_table.add_row("", "")
+                emb_table.add_row("[bold]By Model[/bold]", "")
+                for model, cnt in model_counts:
+                    emb_table.add_row(f"  {model or 'unknown'}", str(cnt))
+
+                # Sample embedding
+                sample = (await session.execute(
+                    select(DocumentEmbedding).limit(1)
+                )).scalars().first()
+
+                if sample:
+                    emb_table.add_row("", "")
+                    emb_table.add_row("[bold]Sample Embedding[/bold]", "")
+                    emb_table.add_row("  Source", sample.source_name)
+                    emb_table.add_row("  Type", sample.source_type)
+                    emb_table.add_row("  Dimension", str(sample.embedding_dimension))
+                    emb_table.add_row("  Provider", sample.embedding_provider or "unknown")
+                    emb_table.add_row("  Model", sample.embedding_model or "unknown")
+                    preview = (sample.chunk_text or "")[:80]
+                    if len(sample.chunk_text or "") > 80:
+                        preview += "..."
+                    emb_table.add_row("  Text Preview", f"[dim]{preview}[/dim]")
+
+                console.print(emb_table)
+            else:
+                console.print("  [yellow]⚠ No embeddings stored. Run: zaytri embed --brand <name>[/yellow]")
+
+            # ══════════════════════════════════════════════════════════
+            # 6. EMBEDDING PROVIDER TEST
+            # ══════════════════════════════════════════════════════════
+            console.print("\n[bold cyan]6. EMBEDDING PROVIDER TEST[/bold cyan]")
+            _print_separator()
+
+            try:
+                from brain.embeddings import get_embedding_provider, EMBEDDING_DIMENSION
+
+                provider = get_embedding_provider(user_plan="free")
+                console.print(f"  Provider:  [white]{provider.provider_name}[/white]")
+                console.print(f"  Model:     [white]{provider.model_name}[/white]")
+                console.print(f"  Dimension: [white]{provider.dimension}D[/white]")
+
+                console.print("  [dim]Generating test embedding...[/dim]")
+                test_start = time.perf_counter()
+                test_vectors = await provider.embed(["Hello, this is a Zaytri echo test."])
+                test_ms = (time.perf_counter() - test_start) * 1000
+
+                if test_vectors and len(test_vectors) > 0:
+                    vec = test_vectors[0]
+                    actual_dim = len(vec)
+                    non_zero = sum(1 for v in vec if v != 0.0)
+                    console.print(f"  [green]✓[/green] Generated {actual_dim}D vector in {test_ms:.1f}ms")
+                    console.print(f"  [dim]  Non-zero dims: {non_zero}/{actual_dim} "
+                                  f"(norm: {sum(v*v for v in vec)**0.5:.4f})[/dim]")
+                    if actual_dim != EMBEDDING_DIMENSION:
+                        console.print(f"  [red]✗ Dimension mismatch! Expected {EMBEDDING_DIMENSION}, got {actual_dim}[/red]")
+                    else:
+                        console.print(f"  [green]✓[/green] Dimension matches pgvector schema ({EMBEDDING_DIMENSION}D)")
+                else:
+                    console.print(f"  [red]✗ Empty embedding returned[/red]")
+            except Exception as e:
+                console.print(f"  [red]✗ Embedding test failed: {e}[/red]")
+
+            # ══════════════════════════════════════════════════════════
+            # 7. LIVE RAG RETRIEVAL TEST
+            # ══════════════════════════════════════════════════════════
+            if brands and total_embeddings > 0:
+                console.print("\n[bold cyan]7. LIVE RAG RETRIEVAL TEST[/bold cyan]")
+                _print_separator()
+
+                test_brand = brands[0]
+                test_query = f"What is {test_brand.brand_name}?"
+                console.print(f"  Brand: [white]{test_brand.brand_name}[/white]")
+                console.print(f"  Query: [white]{test_query}[/white]")
+                console.print("  [dim]Running vector search...[/dim]")
+
+                try:
+                    from brain.rag_engine import get_rag_engine
+                    engine = get_rag_engine()
+                    rag_result = await engine.build_rag_context(
+                        brand_id=str(test_brand.id),
+                        query=test_query,
+                        force_rag=False,
+                        session=session,
+                    )
+
+                    rag_table = Table(show_header=False, padding=(0, 1))
+                    rag_table.add_column("", style="cyan", width=25)
+                    rag_table.add_column("", style="white")
+
+                    rag_table.add_row("Retrieved Chunks", str(len(rag_result.retrieved_chunks)))
+                    rag_table.add_row("Scores", str(rag_result.similarity_scores))
+                    rag_table.add_row("Sufficient Context", "[green]✓ Yes[/green]" if rag_result.is_sufficient else "[yellow]✗ No[/yellow]")
+                    rag_table.add_row("Search Method", rag_result.search_method or "—")
+                    rag_table.add_row("Retrieval Time", f"{rag_result.retrieval_time_ms:.1f}ms")
+
+                    console.print(rag_table)
+
+                    if rag_result.retrieved_chunks:
+                        console.print("  [cyan]Top Match:[/cyan]")
+                        top = rag_result.retrieved_chunks[0]
+                        preview = top.content[:150] + "..." if len(top.content) > 150 else top.content
+                        console.print(f"    [{('green' if top.similarity_score >= 0.5 else 'yellow')}]"
+                                      f"[{top.similarity_score:.4f}][/] {top.source_name}")
+                        console.print(f"    [dim]{preview}[/dim]")
+                except Exception as e:
+                    console.print(f"  [red]✗ RAG test failed: {e}[/red]")
+            else:
+                console.print("\n[bold cyan]7. LIVE RAG RETRIEVAL TEST[/bold cyan]")
+                _print_separator()
+                if not brands:
+                    console.print("  [yellow]⚠ Skipped — no brands configured[/yellow]")
+                else:
+                    console.print("  [yellow]⚠ Skipped — no embeddings stored[/yellow]")
+
+            # ══════════════════════════════════════════════════════════
+            # SUMMARY
+            # ══════════════════════════════════════════════════════════
+            console.print()
+            summary_parts = []
+            summary_parts.append(f"[green]✓[/green] DB connected")
+            summary_parts.append(f"{len(users)} user(s)")
+            summary_parts.append(f"{len(brands)} brand(s)")
+            summary_parts.append(f"{len(sources)} knowledge source(s)")
+            summary_parts.append(f"{total_embeddings} embedding(s)")
+            console.print(Panel(
+                " · ".join(summary_parts),
+                title="[bold green]Echo Summary[/bold green]",
+                border_style="green",
+            ))
+
+    _run_async(_echo())
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
