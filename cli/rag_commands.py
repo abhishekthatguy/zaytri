@@ -9,23 +9,27 @@ Commands:
     zaytri demo       <brand>                  Deterministic demo run
     zaytri embed      --brand <name>           Generate embeddings
     zaytri echo                                Full system diagnostic
+    zaytri db-inspect                          Direct DB content verification
 """
 
 import asyncio
+import os
 import sys
 import time
+
+# ─── Ensure project root is on sys.path ──────────────────────────────────────
+# Allows running directly: python3 cli/rag_commands.py ...
+# Without this, imports like `auth`, `db`, `brain` fail.
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 from typing import Optional
 
-# ─── Register Models ─────────────────────────────────────────────────────────
-# We import all models at the module level so SQLAlchemy correctly registers 
-# relationships (e.g. SocialConnection <-> BrandSettings) before they are used.
-import auth.models  # noqa: F401
-import db.models     # noqa: F401
-import db.settings_models  # noqa: F401
-import db.social_connections  # noqa: F401
-import db.whatsapp_approval   # noqa: F401
-import db.calendar_models     # noqa: F401
-import db.task_models          # noqa: F401
+# ─── Register ALL Models (MUST be before any DB session usage) ───────────────
+# This single import ensures all SQLAlchemy models are loaded in correct
+# dependency order and all relationship() references are eagerly resolved.
+# Without this, you get: sqlalchemy.exc.InvalidRequestError (gkpj)
+import db.register_models  # noqa: F401
 
 import typer
 from rich.console import Console
@@ -107,11 +111,18 @@ def rag_check(
 
         table.add_row("Brand ID", report.brand_id[:16] + "...")
         table.add_row("Brand Name", report.brand_name)
-        table.add_row("Status", "[green]✓ Healthy[/green]" if report.is_healthy else "[red]✗ Unhealthy[/red]")
+
+        if report.is_healthy:
+            table.add_row("Status", "[green]✓ Healthy — Vectors Ready[/green]")
+        elif report.active_knowledge_sources > 0:
+            table.add_row("Status", "[yellow]⚠ Sources Present, No Vectors[/yellow]")
+        else:
+            table.add_row("Status", "[red]✗ No Knowledge Sources[/red]")
+
         table.add_row("Knowledge Sources (Total)", str(report.total_knowledge_sources))
         table.add_row("Knowledge Sources (Active)", str(report.active_knowledge_sources))
+        table.add_row("Vector Embeddings", str(report.total_embeddings) if report.total_embeddings > 0 else "[red]0 — Run embed command![/red]")
         table.add_row("Content Items", str(report.total_content_items))
-        table.add_row("Total Retrievable Chunks", str(report.total_chunks))
         table.add_row("Has Brand Guidelines", "✓" if report.has_brand_guidelines else "✗")
         table.add_row("Has Target Audience", "✓" if report.has_target_audience else "✗")
         table.add_row("Has Brand Tone", "✓" if report.has_brand_tone else "✗")
@@ -120,12 +131,17 @@ def rag_check(
 
         if report.sample_metadata:
             console.print()
-            console.print("[cyan]Sample Knowledge Sources:[/cyan]")
+            console.print("[cyan]Knowledge Sources:[/cyan]")
             for meta in report.sample_metadata:
                 name = meta.get('source_name', 'Unknown')
                 type_ = meta.get('source_type', 'Unknown')
                 v_count = meta.get('vector_count', 0)
-                console.print(f"  • [white]{name}[/white] ({type_}) — vectors: {v_count}")
+                has_content = meta.get('has_content', False)
+
+                vec_status = f"[green]{v_count} vectors[/green]" if v_count > 0 else "[red]0 vectors[/red]"
+                content_status = "[green]has content[/green]" if has_content else "[yellow]empty[/yellow]"
+
+                console.print(f"  • [white]{name}[/white] ({type_}) — {vec_status}, {content_status}")
                 
                 preview = meta.get('summary_preview') or meta.get('chunk_preview')
                 if preview:
@@ -133,6 +149,14 @@ def rag_check(
 
         if report.error:
             console.print(f"\n[red]Error: {report.error}[/red]")
+
+        if not report.is_healthy and report.active_knowledge_sources > 0:
+            console.print()
+            console.print(Panel(
+                f'[bold yellow]Fix:[/bold yellow] python3 cli/rag_commands.py embed --brand "{report.brand_name}"',
+                title="[bold yellow]⚠ Missing Embeddings[/bold yellow]",
+                border_style="yellow",
+            ))
 
     _run_async(_check())
 
@@ -686,6 +710,96 @@ def echo():
             ))
 
     _run_async(_echo())
+
+
+# ─── db-inspect  ─────────────────────────────────────────────────────────────
+
+@app.command("db-inspect")
+def db_inspect():
+    """
+    Direct database inspection — runs raw queries to verify RAG table contents.
+    Perform basic checks on embeddings, knowledge sources, and brand settings.
+    """
+    _print_header("DATABASE CONTENT INSPECTION")
+
+    async def _inspect():
+        from sqlalchemy import text
+        from db.database import async_session
+
+        async with async_session() as session:
+            # 1. Document Embeddings Sample & Count
+            console.print("\n[bold cyan]1. Document Embeddings (Last 5 Chunks)[/bold cyan]")
+            _print_separator()
+            try:
+                # Get count
+                count_res = await session.execute(text("SELECT COUNT(*) FROM document_embeddings;"))
+                total_chunks = count_res.scalar()
+                
+                # Get sample
+                sample_res = await session.execute(text(
+                    "SELECT left(chunk_text, 100), source_name FROM document_embeddings "
+                    "ORDER BY created_at DESC LIMIT 5;"
+                ))
+                samples = sample_res.all()
+
+                if samples:
+                    table = Table(show_header=True, padding=(0, 1))
+                    table.add_column("Source Name", style="cyan")
+                    table.add_column("Chunk Preview (100 chars)", style="white", overflow="ellipsis")
+                    
+                    for chunk, source in samples:
+                        table.add_row(source, chunk.replace("\n", " ").strip() + "...")
+                    console.print(table)
+                else:
+                    console.print("  [yellow]No embeddings found.[/yellow]")
+                
+                console.print(f"\n  [bold]Total Chunks in DB:[/bold] [green]{total_chunks}[/green]")
+            except Exception as e:
+                console.print(f"  [red]✗ Error querying document_embeddings: {e}[/red]")
+
+            # 2. Knowledge Sources
+            console.print("\n[bold cyan]2. Knowledge Sources[/bold cyan]")
+            _print_separator()
+            try:
+                ks_res = await session.execute(text("SELECT id, name, vector_count FROM knowledge_sources;"))
+                sources = ks_res.all()
+
+                if sources:
+                    table = Table(show_header=True, padding=(0, 1))
+                    table.add_column("ID (short)", style="dim")
+                    table.add_column("Name", style="white")
+                    table.add_column("Vector Count", style="green", justify="right")
+                    
+                    for kid, name, v_count in sources:
+                        table.add_row(str(kid)[:8] + "...", name, str(v_count or 0))
+                    console.print(table)
+                else:
+                    console.print("  [yellow]No knowledge sources found.[/yellow]")
+            except Exception as e:
+                console.print(f"  [red]✗ Error querying knowledge_sources: {e}[/red]")
+
+            # 3. Brand Settings
+            console.print("\n[bold cyan]3. Brand Settings[/bold cyan]")
+            _print_separator()
+            try:
+                brand_res = await session.execute(text("SELECT id, brand_name, user_id FROM brand_settings;"))
+                brands = brand_res.all()
+
+                if brands:
+                    table = Table(show_header=True, padding=(0, 1))
+                    table.add_column("Brand ID (short)", style="dim")
+                    table.add_column("Brand Name", style="white")
+                    table.add_column("Owner User ID (short)", style="dim")
+                    
+                    for bid, bname, uid in brands:
+                        table.add_row(str(bid)[:8] + "...", bname, str(uid)[:8] + "...")
+                    console.print(table)
+                else:
+                    console.print("  [yellow]No brands found.[/yellow]")
+            except Exception as e:
+                console.print(f"  [red]✗ Error querying brand_settings: {e}[/red]")
+
+    _run_async(_inspect())
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ OPENAI_MODEL = "text-embedding-3-small"
 OPENAI_NATIVE_DIM = 1536
 OLLAMA_MODEL = "nomic-embed-text"
 OLLAMA_NATIVE_DIM = 768
-MAX_CHUNK_SIZE = 8000  # characters per chunk
+MAX_CHUNK_SIZE = 800  # Reduced for better RAG granularity (was 8000)
 
 
 # ─── Text Chunking ───────────────────────────────────────────────────────────

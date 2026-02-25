@@ -11,16 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from db.database import init_db, close_db
 
-# ─── Register ALL SQLAlchemy models ──────────────────────────────────────────
-# Must be imported BEFORE any router imports, so relationship("User"),
-# relationship("SocialConnection"), etc. can be resolved during mapper config.
-import auth.models  # noqa: F401 — registers User, OAuth, OTP, etc.
-import db.models     # noqa: F401 — registers Content, etc.
-import db.settings_models  # noqa: F401 — registers Settings, Chat, DocumentEmbedding, etc.
-import db.social_connections  # noqa: F401 — registers SocialConnection
-import db.whatsapp_approval   # noqa: F401 — registers WhatsAppApproval
-import db.calendar_models     # noqa: F401 — registers CalendarUpload, CalendarEntry
-import db.task_models          # noqa: F401 — registers TaskExecution
+# ─── Register ALL SQLAlchemy models (MUST be before any router/session import) ──
+# This single import ensures all models are loaded in correct dependency order
+# and all relationship() string references are eagerly resolved.
+import db.register_models  # noqa: F401
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(

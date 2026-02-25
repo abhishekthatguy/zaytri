@@ -26,9 +26,76 @@ logger = logging.getLogger("brain.rag_engine")
 # ─── Constants ───────────────────────────────────────────────────────────────
 
 DEFAULT_TOP_K = 5
-DEFAULT_SIMILARITY_THRESHOLD = 0.6
+DEFAULT_SIMILARITY_THRESHOLD = 0.5  # Lowered for better recall with Ollama models (was 0.6)
 MAX_CHUNK_PREVIEW_LENGTH = 200
 EMBEDDING_DIMENSION = 1536
+
+
+# ─── Content Fetcher (auto-sync from source URLs) ────────────────────────────
+
+# Regex patterns to extract Google Doc/Sheet IDs from various URL formats
+_GDOC_ID_RE = re.compile(
+    r"docs\.google\.com/document/d/([a-zA-Z0-9_-]+)"
+)
+_GSHEET_ID_RE = re.compile(
+    r"docs\.google\.com/spreadsheets/d/([a-zA-Z0-9_-]+)"
+)
+
+
+async def _fetch_source_content(url: str, source_type: str) -> Optional[str]:
+    """
+    Fetch the latest content from a knowledge source URL.
+
+    Supports:
+    - Google Docs  → exported as plain text via /export?format=txt
+    - Google Sheets → exported as CSV
+    - Generic HTTP  → raw text download
+
+    Returns None if the URL can't be fetched or isn't supported.
+    """
+    import aiohttp
+
+    if not url:
+        return None
+
+    fetch_url = url  # default: use URL as-is
+
+    # Google Docs → use export endpoint for plain text
+    gdoc_match = _GDOC_ID_RE.search(url)
+    if gdoc_match:
+        doc_id = gdoc_match.group(1)
+        fetch_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
+
+    # Google Sheets → use export endpoint for CSV
+    gsheet_match = _GSHEET_ID_RE.search(url)
+    if gsheet_match:
+        sheet_id = gsheet_match.group(1)
+        fetch_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as client:
+            async with client.get(fetch_url, allow_redirects=True) as resp:
+                if resp.status != 200:
+                    logger.warning(
+                        f"Failed to fetch {fetch_url}: HTTP {resp.status}"
+                    )
+                    return None
+
+                text = await resp.text()
+
+                # Sanity: skip empty or HTML error pages
+                if not text or len(text.strip()) < 10:
+                    return None
+                if text.strip().startswith("<!DOCTYPE") or text.strip().startswith("<html"):
+                    logger.warning(f"Got HTML instead of text from {fetch_url} — doc may not be public")
+                    return None
+
+                return text.strip()
+
+    except Exception as e:
+        logger.warning(f"Error fetching content from {fetch_url}: {e}")
+        return None
 
 
 # ─── Data Classes ────────────────────────────────────────────────────────────
@@ -213,54 +280,41 @@ class RAGEngine:
                 )
             )).scalar() or 0
 
-            # 6. Total retrievable chunks
-            report.total_chunks = (
-                report.total_embeddings
-                + report.active_knowledge_sources
-                + (1 if report.has_brand_guidelines else 0)
-                + (1 if report.has_target_audience else 0)
-                + (1 if report.has_brand_tone else 0)
-            )
+            # 6. Total retrievable chunks (ONLY count actual vector embeddings)
+            report.total_chunks = report.total_embeddings
 
-            # 7. Sample metadata
-            samples = (await sess.execute(
-                select(DocumentEmbedding)
-                .where(DocumentEmbedding.brand_id == brand_id)
-                .limit(3)
+            # 7. Sample metadata — show knowledge sources with their vector status
+            ks_samples = (await sess.execute(
+                select(KnowledgeSource)
+                .where(KnowledgeSource.brand_id == brand_id)
+                .limit(5)
             )).scalars().all()
-
-            if samples:
-                for s in samples:
-                    report.sample_metadata.append({
-                        "id": str(s.id),
-                        "source_name": s.source_name,
-                        "source_type": s.source_type,
-                        "dimension": s.embedding_dimension,
-                        "chunk_preview": s.chunk_text[:100] if s.chunk_text else "",
-                    })
-            else:
-                # Fallback: show knowledge sources
-                ks_samples = (await sess.execute(
-                    select(KnowledgeSource)
-                    .where(KnowledgeSource.brand_id == brand_id)
-                    .limit(3)
-                )).scalars().all()
-                for ks in ks_samples:
-                    report.sample_metadata.append({
-                        "id": str(ks.id),
-                        "source_name": ks.name,
-                        "source_type": ks.source_type,
-                        "vector_count": ks.vector_count,
-                        "summary_preview": (ks.content_summary or "")[:100],
-                    })
+            for ks in ks_samples:
+                report.sample_metadata.append({
+                    "id": str(ks.id),
+                    "source_name": ks.name,
+                    "source_type": ks.source_type,
+                    "vector_count": ks.vector_count or 0,
+                    "has_content": bool(ks.content_summary),
+                    "summary_preview": (ks.content_summary or "")[:100],
+                })
 
             # 8. Health determination
-            report.is_healthy = report.total_chunks > 0
+            # Healthy only if we have actual vector embeddings
+            report.is_healthy = report.total_embeddings > 0
             if not report.is_healthy:
-                report.error = (
-                    f"No retrievable knowledge found for brand '{brand.brand_name}'. "
-                    "Upload knowledge sources or configure brand guidelines."
-                )
+                if report.active_knowledge_sources > 0:
+                    report.error = (
+                        f"Brand '{brand.brand_name}' has {report.active_knowledge_sources} "
+                        "knowledge source(s) but NO vector embeddings. "
+                        "Run: python3 cli/rag_commands.py embed --brand "
+                        f'"{brand.brand_name}" to generate embeddings.'
+                    )
+                else:
+                    report.error = (
+                        f"No retrievable knowledge found for brand '{brand.brand_name}'. "
+                        "Upload knowledge sources or configure brand guidelines."
+                    )
 
         if session:
             await _run(session)
@@ -350,13 +404,14 @@ class RAGEngine:
             result.embedding_time_ms = (time.perf_counter() - embed_start) * 1000
 
             # pgvector cosine distance: 1 - cosine_similarity
-            # Use raw SQL for pgvector operator
+            # NOTE: We use CAST(... AS vector) instead of ::vector because
+            # asyncpg confuses ::vector with its :named_param syntax.
             stmt = sa_text("""
                 SELECT id, chunk_text, source_name, source_type, metadata_json,
-                       1 - (embedding <=> :query_vec::vector) as similarity
+                       1 - (embedding <=> CAST(:query_vec AS vector)) as similarity
                 FROM document_embeddings
                 WHERE brand_id = :brand_id
-                ORDER BY embedding <=> :query_vec::vector
+                ORDER BY embedding <=> CAST(:query_vec AS vector)
                 LIMIT :top_k
             """)
 
@@ -390,6 +445,8 @@ class RAGEngine:
 
         except Exception as e:
             logger.warning(f"Vector retrieval failed, falling back to text: {e}")
+            # Rollback the failed transaction before attempting text fallback
+            await session.rollback()
             await self._text_retrieval(session, brand, query, result)
             return
 
@@ -556,12 +613,9 @@ class RAGEngine:
 
             provider = get_embedding_provider()
 
-            # ── Step 1: Collect all current text to embed ─────────────
-            # Each entry: (text, source_name, source_type, hash, metadata)
-            texts_to_embed: List[Tuple[str, str, str, str, Dict]] = []
-            current_source_names = set()
-
-            # Knowledge sources
+            # ── Step 0: Auto-sync content from source URLs ────────────
+            # Fetch latest content from Google Docs (or other URLs) and
+            # update content_summary in DB if the content has changed.
             sources = (await sess.execute(
                 select(KnowledgeSource).where(
                     and_(
@@ -571,15 +625,55 @@ class RAGEngine:
                 )
             )).scalars().all()
 
+            synced_count = 0
+            for ks in sources:
+                if ks.url:
+                    try:
+                        fresh_content = await _fetch_source_content(ks.url, ks.source_type)
+                        if fresh_content:
+                            old_hash = content_hash(ks.content_summary or "")
+                            new_hash = content_hash(fresh_content)
+                            if old_hash != new_hash:
+                                logger.info(
+                                    f"Content changed for '{ks.name}' "
+                                    f"({len(ks.content_summary or '')} → {len(fresh_content)} chars)"
+                                )
+                                ks.content_summary = fresh_content
+                                synced_count += 1
+                            else:
+                                logger.debug(f"Content unchanged for '{ks.name}'")
+                    except Exception as e:
+                        logger.warning(f"Failed to sync content for '{ks.name}': {e}")
+
+            if synced_count > 0:
+                await sess.flush()
+                logger.info(f"Auto-synced {synced_count} knowledge source(s) with fresh content")
+                # Re-fetch sources after flush to get updated content
+                sources = (await sess.execute(
+                    select(KnowledgeSource).where(
+                        and_(
+                            KnowledgeSource.brand_id == brand_id,
+                            KnowledgeSource.is_active == True,
+                        )
+                    )
+                )).scalars().all()
+
+            # ── Step 1: Collect all current text to embed ─────────────
+            # Each entry: (text, source_name, source_type, hash, metadata, knowledge_source_id)
+            texts_to_embed: List[Tuple[str, str, str, str, Dict, Optional[str]]] = []
+            current_source_names = set()
+
+            # Knowledge sources
             for ks in sources:
                 if ks.content_summary:
                     current_source_names.add(ks.name)
                     chunks = chunk_text(ks.content_summary)
                     for i, chunk in enumerate(chunks):
-                        c_hash = content_hash(chunk)
+                        c_hash = content_hash(f"{ks.name}::{chunk}")
                         texts_to_embed.append((
                             chunk, ks.name, ks.source_type, c_hash,
                             {"source": "knowledge_source", "url": ks.url, "chunk_index": i},
+                            str(ks.id),
                         ))
 
             # Brand config documents
@@ -591,12 +685,13 @@ class RAGEngine:
             if brand.target_audience:
                 brand_docs.append(("Target Audience", f"Target Audience for {brand.brand_name}: {brand.target_audience}"))
 
-            for name, text in brand_docs:
+            for name, text_content in brand_docs:
                 current_source_names.add(name)
-                c_hash = content_hash(text)
+                c_hash = content_hash(f"{name}::{text_content}")
                 texts_to_embed.append((
-                    text, name, "brand_config", c_hash,
+                    text_content, name, "brand_config", c_hash,
                     {"source": "brand_settings"},
+                    None,  # no knowledge_source_id for brand config
                 ))
 
             # ── Step 2: Get existing embeddings for this brand ────────
@@ -625,12 +720,12 @@ class RAGEngine:
                     logger.info(f"Deleted {del_result.rowcount} stale embeddings for source '{stale_name}'")
 
             # ── Step 4: Identify new hashes and changed sources ───────
-            new_hashes = {h for _, _, _, h, _ in texts_to_embed}
+            new_hashes = {h for _, _, _, h, _, _ in texts_to_embed}
 
             # Sources whose content has changed: they have chunks with NEW hashes
             # that don't exist in the DB yet → delete old chunks for those sources, then insert
             changed_source_names = set()
-            for text, source_name, source_type, c_hash, metadata in texts_to_embed:
+            for text_content, source_name, source_type, c_hash, metadata, ks_id in texts_to_embed:
                 if c_hash not in existing_hashes:
                     changed_source_names.add(source_name)
 
@@ -659,7 +754,7 @@ class RAGEngine:
             )).scalars().all()
             existing_hashes_after = set(existing_after_delete)
 
-            new_texts = [(t, n, st, h, m) for t, n, st, h, m in texts_to_embed if h not in existing_hashes_after]
+            new_texts = [(t, n, st, h, m, kid) for t, n, st, h, m, kid in texts_to_embed if h not in existing_hashes_after]
             results["skipped"] = len(texts_to_embed) - len(new_texts)
 
             if not new_texts:
@@ -671,7 +766,7 @@ class RAGEngine:
                 raw_texts = [t[0] for t in new_texts]
                 vectors = await provider.embed(raw_texts)
 
-                for (text, source_name, source_type, c_hash, metadata), vector in zip(new_texts, vectors):
+                for (text_content, source_name, source_type, c_hash, metadata, ks_id), vector in zip(new_texts, vectors):
                     vec_dim = len(vector) if vector else 0
 
                     # Both routes (Ollama padded + OpenAI native) should produce 1536D
@@ -683,7 +778,8 @@ class RAGEngine:
 
                     emb_data = {
                         "brand_id": brand_id,
-                        "chunk_text": text,
+                        "knowledge_source_id": ks_id,
+                        "chunk_text": text_content,
                         "chunk_index": metadata.get("chunk_index", 0),
                         "content_hash": c_hash,
                         "source_name": source_name,
@@ -709,6 +805,40 @@ class RAGEngine:
                     results["embedded"] += 1
 
                 await sess.commit()
+
+                # ── Step 7: Update vector_count on knowledge_sources ──
+                # Count embeddings per knowledge_source_id and update accordingly
+                ks_counts = (await sess.execute(
+                    select(
+                        DocumentEmbedding.knowledge_source_id,
+                        func.count(DocumentEmbedding.id),
+                    ).where(
+                        and_(
+                            DocumentEmbedding.brand_id == brand_id,
+                            DocumentEmbedding.knowledge_source_id.isnot(None),
+                        )
+                    ).group_by(DocumentEmbedding.knowledge_source_id)
+                )).all()
+
+                for ks_id, count in ks_counts:
+                    await sess.execute(
+                        KnowledgeSource.__table__.update()
+                        .where(KnowledgeSource.id == ks_id)
+                        .values(vector_count=count, last_indexed_at=func.now())
+                    )
+
+                # Zero out vector_count for KnowledgeSources that have NO embeddings
+                all_ks_ids_with_vectors = {str(ks_id) for ks_id, _ in ks_counts}
+                for ks in sources:
+                    if str(ks.id) not in all_ks_ids_with_vectors:
+                        await sess.execute(
+                            KnowledgeSource.__table__.update()
+                            .where(KnowledgeSource.id == ks.id)
+                            .values(vector_count=0)
+                        )
+
+                await sess.commit()
+
                 logger.info(
                     f"Embedded {results['embedded']} chunks for brand {brand_id} "
                     f"via {provider.provider_name}/{provider.model_name} "
