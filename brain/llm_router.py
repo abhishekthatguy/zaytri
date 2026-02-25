@@ -111,7 +111,13 @@ class LLMRouter:
                 )
             
             # 2. Fallbacks: Ollama
-            for fallback_model in ["llama3.2:latest", "deepseek-r1:latest", "mistral:latest"]:
+            # We use common model tags and include the user's preferred model first
+            fallback_models = [settings.ollama_model]
+            for m in ["llama3:latest", "mistral:latest", "llama3.2:latest"]:
+                if m not in fallback_models:
+                    fallback_models.append(m)
+
+            for fallback_model in fallback_models:
                 providers.append(
                     OllamaProvider(
                         host=settings.ollama_host,

@@ -135,16 +135,17 @@ async def send_chat_message(
 
     except Exception as e:
         import logging
-        logging.getLogger("zaytri.chat").error(f"Master Agent error: {e}", exc_info=True)
+        logger = logging.getLogger("zaytri.chat")
+        logger.error(f"Master Agent error: {e}", exc_info=True)
         result = {
             "intent": "general_chat",
             "response": (
-                "⚠️ I took too long processing your request. "
-                "This usually happens when the local AI model is under heavy load.\n\n"
-                "Please try again — shorter messages often get faster responses! 🔄"
+                "⚠️ I am having trouble processing your request right now. "
+                "This can happen if there is a connection issue with the AI models or if the system is under heavy load.\n\n"
+                "Please check your connection and try again! 🔄"
             ),
             "action_success": False,
-            "action_data": None,
+            "action_data": {"error": str(e)},
         }
 
     # Save assistant response (only for authenticated users)

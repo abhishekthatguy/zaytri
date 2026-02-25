@@ -124,13 +124,15 @@ class MasterOrchestrator:
                         all_rag_results = []
                         
                         for brand in brands:
+                            if not is_authenticated or str(user_id) == "guest":
+                                continue
                             brand_id = str(brand.id)
                             
                             try:
                                 rag_result = await rag_engine.build_rag_context(
                                     brand_id=brand_id,
                                     query=message,
-                                    force_rag=False,  # Don't block per-brand; check overall later
+                                    force_rag=False, 
                                     session=rag_session,
                                 )
                                 all_rag_results.append(rag_result)
@@ -284,48 +286,58 @@ class MasterOrchestrator:
             }
 
         # ── 4. Execute via orchestration pipeline ────────────────────
-        from db.database import async_session
-        from orchestration.brand_resolver import BrandResolver
-        from orchestration.task_planner import TaskPlanner, LIGHTWEIGHT_INTENTS
-        from orchestration.execution_controller import ExecutionController
-
-        async with async_session() as session:
-            # Resolve brand
-            resolver = BrandResolver(session)
-            brand = await resolver.resolve(user_id, params.get("brand"))
-
-            if brand:
-                set_task_context(brand_id=str(brand.id))
-
-            # Plan task
-            planner = TaskPlanner(session)
-            task = await planner.plan(
-                user_id=user_id,
-                intent=intent,
-                params=params,
-                brand=brand,
-            )
-
-            # Execute
-            controller = ExecutionController(session, user_id)
-
-            # Build action handlers from the legacy ActionExecutor
+        action_result = {"success": True, "data": None}
+        
+        if is_authenticated and str(user_id) != "guest":
+            from db.database import async_session
+            from orchestration.brand_resolver import BrandResolver
+            from orchestration.task_planner import TaskPlanner
+            from orchestration.execution_controller import ExecutionController
             from agents.master_agent import ActionExecutor
-            executor = ActionExecutor(user_id=user_id, session=session)
-            action_handlers = {
-                name.replace("_handle_", ""): getattr(executor, name)
-                for name in dir(executor)
-                if name.startswith("_handle_")
-            }
 
-            if task:
-                action_result = await controller.execute(task, action_handlers)
-            else:
-                action_result = await controller.execute_lightweight(
-                    intent, params, action_handlers
+            async with async_session() as session:
+                # Resolve brand
+                resolver = BrandResolver(session)
+                brand = await resolver.resolve(user_id, params.get("brand"))
+
+                if brand:
+                    set_task_context(brand_id=str(brand.id))
+
+                # Plan task
+                planner = TaskPlanner(session)
+                task = await planner.plan(
+                    user_id=user_id,
+                    intent=intent,
+                    params=params,
+                    brand=brand,
                 )
 
-            await session.commit()
+                # Execute
+                controller = ExecutionController(session, user_id)
+                executor = ActionExecutor(user_id=user_id, session=session)
+                action_handlers = {
+                    name.replace("_handle_", ""): getattr(executor, name)
+                    for name in dir(executor)
+                    if name.startswith("_handle_")
+                }
+
+                if task:
+                    action_result = await controller.execute(task, action_handlers)
+                else:
+                    action_result = await controller.execute_lightweight(
+                        intent, params, action_handlers
+                    )
+
+                await session.commit()
+        else:
+            # Guest user or unauthenticated: only allow lightweight intents
+            # (Note: Auth gate in api/chat.py will also filter responses, but we 
+            # prevent DB access here)
+            logger.info(f"Execution skipped for guest/unauthenticated user: {user_id}")
+            if intent in ("introduce", "help", "general_chat"):
+                 # We could still run lightweight logic if needed, but usually 
+                 # the intent classification already provided the response.
+                 action_result = {"success": True, "data": None}
 
         # ── 5. Enrich response with action data ─────────────────────
         if action_result.get("data") and intent not in ("help", "general_chat", "introduce"):

@@ -106,6 +106,16 @@ class LoadBalancerProvider(BaseLLMProvider):
                 except Exception as e:
                     last_error = e
                     breaker.record_failure()
+                    
+                    # Optimization: If the error is a 404 (model missing), don't retry this provider
+                    error_str = str(e).lower()
+                    if "404" in error_str or "not found" in error_str:
+                        logger.warning(
+                            f"[LoadBalancer] {provider.provider_name} missing model or endpoint (404). "
+                            "Skipping retries for this provider."
+                        )
+                        break
+
                     logger.warning(
                         f"[LoadBalancer] {provider.provider_name} failed "
                         f"(attempt {retry+1}): {e}"
