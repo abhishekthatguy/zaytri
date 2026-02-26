@@ -240,6 +240,11 @@ const AgentNetwork = dynamic(() => import("@/components/AgentNetwork"), {
     loading: () => <div className="h-[450px] md:h-[600px] w-full" />
 });
 
+const MeetTheTeam3D = dynamic(() => import("@/components/MeetTheTeam3D"), {
+    ssr: false,
+    loading: () => <div className="h-[600px] w-full flex items-center justify-center text-white/20">Initializing 3D Neural Space...</div>
+});
+
 export default function LandingPage() {
     return (
         <div style={{ background: "#0a0a12", color: "white", minHeight: "100vh" }}>
@@ -361,65 +366,24 @@ export default function LandingPage() {
             </section>
 
             {/* ═══ Agents Showcase ═══ */}
-            <section className="py-24" style={{ background: "rgba(255,255,255,0.01)" }}>
-                <div className="max-w-7xl mx-auto px-6">
+            <section className="py-24 relative overflow-hidden" style={{ background: "rgba(255,255,255,0.01)" }}>
+                <div className="max-w-7xl mx-auto px-6 relative z-10">
                     <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-4xl font-black mb-4">
+                        <h2 className="text-3xl md:text-5xl font-black mb-4">
                             Meet Your <span style={{ color: "#06b6d4" }}>AI Team</span>
                         </h2>
-                        <p className="text-lg max-w-xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-                            7 specialized agents work together in an automated pipeline
+                        <p className="text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
+                            7 specialized agents work together in a synchronized 3D autonomous pipeline.
+                            Hover or click to explore each node.
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-center gap-4">
-                        {siteConfig.agents.map((agent, i) => (
-                            <div
-                                key={agent.name}
-                                className="group relative overflow-hidden rounded-2xl p-6 transition-all duration-300 hover:scale-105 hover:-translate-y-1"
-                                style={{
-                                    background: "rgba(255,255,255,0.03)",
-                                    border: "1px solid rgba(255,255,255,0.06)",
-                                    width: 220,
-                                }}
-                            >
-                                <div
-                                    className="text-4xl mb-4 transition-transform group-hover:scale-110"
-                                    style={{ filter: `hue-rotate(${i * 30}deg)` }}
-                                >
-                                    {agent.icon}
-                                </div>
-                                <h3 className="text-sm font-bold text-white mb-2">{agent.name}</h3>
-                                <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                    {agent.description}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
+                    <MeetTheTeam3D />
 
                     {/* Pipeline Flow */}
-                    <div className="mt-16 flex items-center justify-center gap-3 flex-wrap text-sm">
-                        {["Content", "→", "Hashtags", "→", "Review", "→", "Approve", "→", "Publish", "→", "Engage"].map(
-                            (step, i) =>
-                                step === "→" ? (
-                                    <span key={i} style={{ color: "#06b6d4", fontSize: 20 }}>→</span>
-                                ) : (
-                                    <span
-                                        key={i}
-                                        className="px-4 py-2 rounded-xl font-medium"
-                                        style={{
-                                            background: "rgba(6, 182, 212, 0.08)",
-                                            border: "1px solid rgba(6, 182, 212, 0.15)",
-                                            color: "rgba(255,255,255,0.7)",
-                                        }}
-                                    >
-                                        {step}
-                                    </span>
-                                )
-                        )}
-                    </div>
                 </div>
             </section>
+
 
             {/* ═══ Features Section ═══ */}
             <section id="features" className="py-24">
