@@ -378,21 +378,34 @@ async def get_entry(
 @router.post("/process/upload/{upload_id}", response_model=ProcessResponse)
 async def process_upload(
     upload_id: UUID,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
     Process all pending entries from a calendar upload through the full pipeline.
     This runs Content Creator → Hashtag → Review → Approval → Schedule.
     """
+    from db.calendar_models import CalendarUpload
+
+    # Verify ownership
+    result = await db.execute(
+        select(CalendarUpload).where(
+            CalendarUpload.id == upload_id,
+            CalendarUpload.user_id == user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Upload not found")
+
     try:
         from workflow.calendar_pipeline import CalendarPipeline
         pipeline = CalendarPipeline()
-        result = await pipeline.process_upload(str(upload_id))
+        result_data = await pipeline.process_upload(str(upload_id))
 
         return ProcessResponse(
             status="success",
-            message=f"Processed {result['success']}/{result['total_entries']} entries",
-            data=result,
+            message=f"Processed {result_data['success']}/{result_data['total_entries']} entries",
+            data=result_data,
         )
 
     except Exception as e:
@@ -403,9 +416,22 @@ async def process_upload(
 @router.post("/process/upload/{upload_id}/async", response_model=ProcessResponse)
 async def process_upload_async(
     upload_id: UUID,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Process all pending entries asynchronously via Celery."""
+    from db.calendar_models import CalendarUpload
+
+    # Verify ownership
+    result = await db.execute(
+        select(CalendarUpload).where(
+            CalendarUpload.id == upload_id,
+            CalendarUpload.user_id == user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Upload not found")
+
     try:
         from celery_app import celery_app
         task = celery_app.send_task(
@@ -429,24 +455,36 @@ async def process_upload_async(
 @router.post("/process/entry/{entry_id}", response_model=ProcessResponse)
 async def process_entry(
     entry_id: UUID,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Process a single calendar entry through the pipeline."""
+    from db.calendar_models import CalendarEntry
+
+    # Verify ownership
+    result = await db.execute(
+        select(CalendarEntry).where(
+            CalendarEntry.id == entry_id,
+            CalendarEntry.user_id == user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Entry not found")
+
     try:
         from workflow.calendar_pipeline import CalendarPipeline
         pipeline = CalendarPipeline()
-        result = await pipeline.process_entry(str(entry_id))
+        result_data = await pipeline.process_entry(str(entry_id))
 
         return ProcessResponse(
-            status="success" if result.get("success") else "failed",
-            message="Entry processed" if result.get("success") else f"Failed: {result.get('error')}",
-            data=result,
+            status="success" if result_data.get("success") else "failed",
+            message="Entry processed" if result_data.get("success") else f"Failed: {result_data.get('error')}",
+            data=result_data,
         )
 
     except Exception as e:
         logger.error(f"Entry processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-
 
 # ─── Statistics ──────────────────────────────────────────────────────────────
 

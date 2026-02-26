@@ -8,6 +8,7 @@ No 3rd-party auth libraries — we handle the OAuth flow ourselves via httpx.
 import httpx
 import logging
 from typing import Optional, Dict, Any
+from urllib.parse import urlencode
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -226,34 +227,46 @@ def get_oauth_login_url(provider: str, redirect_uri: str) -> Optional[str]:
     """Generate the OAuth authorization URL for a provider."""
     urls = {
         "google": (
-            f"https://accounts.google.com/o/oauth2/v2/auth?"
-            f"client_id={settings.oauth_google_client_id}"
-            f"&redirect_uri={redirect_uri}"
-            f"&response_type=code"
-            f"&scope=openid%20email%20profile"
-            f"&access_type=offline"
+            "https://accounts.google.com/o/oauth2/v2/auth?"
+            + urlencode({
+                "client_id": settings.oauth_google_client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "access_type": "offline",
+                "prompt": "consent",
+                "state": provider,
+            })
         ),
         "facebook": (
-            f"https://www.facebook.com/v18.0/dialog/oauth?"
-            f"client_id={settings.oauth_facebook_app_id}"
-            f"&redirect_uri={redirect_uri}"
-            f"&scope=email,public_profile"
+            "https://www.facebook.com/v18.0/dialog/oauth?"
+            + urlencode({
+                "client_id": settings.oauth_facebook_app_id,
+                "redirect_uri": redirect_uri,
+                "scope": "email,public_profile",
+                "state": provider,
+            })
         ),
         "github": (
-            f"https://github.com/login/oauth/authorize?"
-            f"client_id={settings.oauth_github_client_id}"
-            f"&redirect_uri={redirect_uri}"
-            f"&scope=read:user%20user:email"
+            "https://github.com/login/oauth/authorize?"
+            + urlencode({
+                "client_id": settings.oauth_github_client_id,
+                "redirect_uri": redirect_uri,
+                "scope": "read:user user:email",
+                "state": provider,
+            })
         ),
         "twitter": (
-            f"https://twitter.com/i/oauth2/authorize?"
-            f"client_id={settings.oauth_twitter_client_id}"
-            f"&redirect_uri={redirect_uri}"
-            f"&response_type=code"
-            f"&scope=tweet.read%20users.read"
-            f"&state=state"
-            f"&code_challenge=challenge"
-            f"&code_challenge_method=plain"
+            "https://twitter.com/i/oauth2/authorize?"
+            + urlencode({
+                "client_id": settings.oauth_twitter_client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": "tweet.read users.read",
+                "state": provider,
+                "code_challenge": "challenge",
+                "code_challenge_method": "plain",
+            })
         ),
     }
     return urls.get(provider)

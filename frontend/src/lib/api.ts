@@ -45,9 +45,13 @@ async function apiFetch<T>(
     // Only trigger session-expired flow if user was actually logged in (had a token)
     if (token) {
       clearToken();
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        // Dispatch event for SessionProvider to show popup
-        window.dispatchEvent(new CustomEvent("zaytri-session-expired"));
+      if (typeof window !== "undefined") {
+        const p = window.location.pathname;
+        const isPublic = p === "/" || ["/login", "/signup", "/forgot-password", "/reset-password", "/verify", "/auth/callback", "/about", "/privacy", "/terms", "/resources"].some(r => p.startsWith(r));
+        if (!isPublic) {
+          // Dispatch event for SessionProvider to show popup
+          window.dispatchEvent(new CustomEvent("zaytri-session-expired"));
+        }
       }
     }
     throw new Error("Session expired. Please sign in again.");

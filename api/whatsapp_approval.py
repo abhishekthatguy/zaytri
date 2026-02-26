@@ -181,9 +181,14 @@ async def send_for_approval(
             detail="WhatsApp Business API not configured. Add credentials in .env",
         )
 
-    # Fetch content
+    # Fetch content with ownership check
     from uuid import UUID as PyUUID
-    result = await db.execute(select(Content).where(Content.id == PyUUID(content_id)))
+    result = await db.execute(
+        select(Content).where(
+            Content.id == PyUUID(content_id),
+            Content.created_by == user.id,
+        )
+    )
     content = result.scalar_one_or_none()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")

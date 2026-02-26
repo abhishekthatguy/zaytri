@@ -283,7 +283,7 @@ export default function LoginPage() {
                         <button key={p.name} onClick={async () => {
                             try {
                                 const { getOAuthURL } = await import("@/lib/auth");
-                                const redirectUri = `${window.location.origin}/verify?provider=${p.name.toLowerCase()}`;
+                                const redirectUri = `${window.location.origin}/auth/callback`;
                                 const data = await getOAuthURL(p.name.toLowerCase(), redirectUri);
                                 window.location.href = data.url;
                             } catch {

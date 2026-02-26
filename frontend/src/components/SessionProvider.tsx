@@ -28,7 +28,7 @@ export function useSession(): SessionContextType {
 
 // ─── Auth routes (no guard needed) ────────────────────────────────────────
 
-const PUBLIC_ROUTES = ["/", "/about", "/privacy", "/terms", "/resources", "/login", "/signup", "/forgot-password", "/reset-password", "/verify"];
+const PUBLIC_ROUTES = ["/", "/about", "/privacy", "/terms", "/resources", "/login", "/signup", "/forgot-password", "/reset-password", "/verify", "/auth/callback"];
 
 function isPublicRoute(pathname: string): boolean {
     if (pathname === "/") return true;
@@ -36,7 +36,7 @@ function isPublicRoute(pathname: string): boolean {
 }
 
 function isAuthRoute(pathname: string): boolean {
-    const authPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify"];
+    const authPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify", "/auth/callback"];
     return authPaths.some((r) => pathname.startsWith(r));
 }
 
@@ -387,7 +387,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const [user, setUser] = useState<AuthUser | null>(null);
     const [sessionExpired, setSessionExpired] = useState(false);
-    const [showGetStarted, setShowGetStarted] = useState(false);
     const [checked, setChecked] = useState(false);
     const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -400,26 +399,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             setUser(null);
 
             // Only show session expired on protected routes
-            // On public routes, we show "Get Started" instead of an error
             if (!isPublicRoute(window.location.pathname)) {
                 setSessionExpired(true);
-            } else if (!isAuthRoute(window.location.pathname)) {
-                // On public landing pages, show the Get Started popup later
-                setTimeout(() => setShowGetStarted(true), 3000);
             }
             return;
         }
 
         setUser(storedUser);
         setSessionExpired(false);
-        setShowGetStarted(false);
     }, []);
 
     // Initial check + route changes
     useEffect(() => {
         if (isAuthRoute(pathname)) {
             setSessionExpired(false);
-            setShowGetStarted(false);
             setChecked(true);
             return;
         }
@@ -460,7 +453,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // Listen for API-triggered session expiry
         const handleApiExpiry = () => {
             setUser(null);
-            setSessionExpired(true);
+            // Only show the popup on protected routes — not on login/landing pages
+            if (!isPublicRoute(window.location.pathname)) {
+                setSessionExpired(true);
+            }
         };
 
         window.addEventListener("storage", handleStorage);
@@ -506,7 +502,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         >
             {children}
             {sessionExpired && <SessionExpiredPopup onLogin={handleLoginRedirect} />}
-            {showGetStarted && !user && <GetStartedPopup onGetStarted={() => router.push("/login")} />}
         </SessionContext.Provider>
     );
 }

@@ -135,6 +135,17 @@ async def reindex_brand_embeddings(
     provider = get_embedding_provider(user_plan=plan_str, force_provider=force_provider)
 
     if brand_id:
+        # Verify brand ownership
+        from db.settings_models import BrandSettings
+        brand_result = await db.execute(
+            select(BrandSettings).where(
+                BrandSettings.id == brand_id,
+                BrandSettings.user_id == user.id,
+            )
+        )
+        if not brand_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Brand not found")
+
         result = await engine.embed_brand_knowledge(brand_id)
         return {
             "status": "success",

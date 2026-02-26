@@ -31,21 +31,27 @@ async def get_content_stats(
     """Aggregate content counts by status for the dashboard."""
     from sqlalchemy import func
 
-    # Total count
-    total_result = await db.execute(select(func.count()).select_from(Content))
+    # Total count (scoped to current user)
+    total_result = await db.execute(
+        select(func.count()).select_from(Content).where(Content.created_by == user.id)
+    )
     total = total_result.scalar() or 0
 
     # Count per status
     status_counts = {}
     for s in ContentStatus:
         result = await db.execute(
-            select(func.count()).select_from(Content).where(Content.status == s)
+            select(func.count()).select_from(Content).where(
+                Content.status == s, Content.created_by == user.id
+            )
         )
         status_counts[s.value] = result.scalar() or 0
 
     # Average review score
     avg_result = await db.execute(
-        select(func.avg(Content.review_score)).where(Content.review_score.isnot(None))
+        select(func.avg(Content.review_score)).where(
+            Content.review_score.isnot(None), Content.created_by == user.id
+        )
     )
     avg_score = avg_result.scalar()
     avg_score = round(float(avg_score), 1) if avg_score else 0.0
@@ -54,9 +60,12 @@ async def get_content_stats(
     from datetime import timedelta
     week_ago = utc_now() - timedelta(days=7)
     recent_result = await db.execute(
-        select(func.count()).select_from(Schedule).where(
+        select(func.count()).select_from(Schedule)
+        .join(Content, Schedule.content_id == Content.id)
+        .where(
             Schedule.is_published == True,
             Schedule.published_at >= week_ago,
+            Content.created_by == user.id,
         )
     )
     recent_published = recent_result.scalar() or 0
@@ -119,7 +128,7 @@ async def list_content(
     user: User = Depends(get_current_user),
 ):
     """List all generated content with optional filters."""
-    query = select(Content).order_by(desc(Content.created_at))
+    query = select(Content).where(Content.created_by == user.id).order_by(desc(Content.created_at))
 
     # By default, exclude deleted content unless explicitly filtered
     if status_filter:
@@ -132,7 +141,7 @@ async def list_content(
 
     # Count total
     from sqlalchemy import func
-    count_query = select(func.count()).select_from(Content)
+    count_query = select(func.count()).select_from(Content).where(Content.created_by == user.id)
     if status_filter:
         count_query = count_query.where(Content.status == ContentStatus(status_filter))
     else:
@@ -162,7 +171,9 @@ async def get_content(
     user: User = Depends(get_current_user),
 ):
     """Get a single content item by ID."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:
@@ -178,7 +189,9 @@ async def approve_content(
     user: User = Depends(get_current_user),
 ):
     """Approve content for publishing."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:
@@ -199,7 +212,9 @@ async def reject_content(
     user: User = Depends(get_current_user),
 ):
     """Reject content (set back to draft)."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:
@@ -220,7 +235,9 @@ async def edit_content(
     user: User = Depends(get_current_user),
 ):
     """Edit a draft content item."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:
@@ -251,7 +268,9 @@ async def publish_now(
     user: User = Depends(get_current_user),
 ):
     """Immediately publish approved content to its platform."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:
@@ -340,7 +359,9 @@ async def delete_content(
     user: User = Depends(get_current_user),
 ):
     """Soft delete a content item."""
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    result = await db.execute(
+        select(Content).where(Content.id == content_id, Content.created_by == user.id)
+    )
     content = result.scalar_one_or_none()
 
     if not content:

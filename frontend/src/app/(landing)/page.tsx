@@ -233,6 +233,13 @@ function Footer() {
 
 // ─── Main Landing Page ─────────────────────────────────────────────────────
 
+import dynamic from "next/dynamic";
+
+const AgentNetwork = dynamic(() => import("@/components/AgentNetwork"), {
+    ssr: false,
+    loading: () => <div className="h-[450px] md:h-[600px] w-full" />
+});
+
 export default function LandingPage() {
     return (
         <div style={{ background: "#0a0a12", color: "white", minHeight: "100vh" }}>
@@ -240,7 +247,7 @@ export default function LandingPage() {
 
             {/* ═══ Hero Section ═══ */}
             <section
-                className="relative overflow-hidden"
+                className="relative overflow-hidden pt-20"
                 style={{
                     minHeight: "100vh",
                     display: "flex",
@@ -253,92 +260,102 @@ export default function LandingPage() {
             >
                 {/* Animated grid background */}
                 <div
-                    className="absolute inset-0"
+                    className="absolute inset-0 z-0"
                     style={{
                         backgroundImage:
-                            "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px)," +
-                            "linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)",
+                            "linear-gradient(rgba(255,255,255,0.01) 1px, transparent 1px)," +
+                            "linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px)",
                         backgroundSize: "60px 60px",
                     }}
                 />
 
-                <div className="relative max-w-7xl mx-auto px-6 py-32 text-center">
-                    {/* Badge */}
-                    <div
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium mb-8"
-                        style={{
-                            background: "rgba(6, 182, 212, 0.1)",
-                            border: "1px solid rgba(6, 182, 212, 0.2)",
-                            color: "#f472b6",
-                        }}
-                    >
-                        <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                        AI Agent Architecture Showcase
-                    </div>
+                {/* Full-Width 3D Background */}
+                <div className="absolute inset-0 z-0 opacity-50 pointer-events-none">
+                    <AgentNetwork />
+                </div>
 
-                    <h1
-                        className="text-5xl md:text-7xl font-black mb-6 leading-tight"
-                        style={{
-                            background: "linear-gradient(135deg, #ffffff 0%, #06b6d4 50%, #a78bfa 100%)",
-                            WebkitBackgroundClip: "text",
-                            WebkitTextFillColor: "transparent",
-                        }}
-                    >
-                        Explore AI Agent
-                        <br />
-                        Orchestration Patterns
-                    </h1>
-
-                    <p
-                        className="text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed"
-                        style={{ color: "rgba(255,255,255,0.6)" }}
-                    >
-                        {siteConfig.description}
-                    </p>
-
-                    {/* CTA Buttons */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-                        <Link
-                            href="/dashboard"
-                            className="px-8 py-4 rounded-2xl text-base font-bold text-white transition-all hover:scale-105 active:scale-95"
+                <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 w-full text-center">
+                    <div className="flex flex-col items-center">
+                        {/* Badge */}
+                        <div
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium mb-8"
                             style={{
-                                background: "linear-gradient(135deg, #06b6d4, #0891b2)",
-                                boxShadow: "0 8px 30px rgba(6, 182, 212, 0.4)",
+                                background: "rgba(6, 182, 212, 0.15)",
+                                border: "1px solid rgba(6, 182, 212, 0.25)",
+                                color: "#22d3ee",
+                                backdropFilter: "blur(8px)",
                             }}
                         >
-                            Open Architecture Demo
-                        </Link>
-                        <Link
-                            href="#features"
-                            className="px-8 py-4 rounded-2xl text-base font-medium transition-all hover:bg-white/5"
+                            <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                            Decentralized Intelligent Node Network
+                        </div>
+
+                        <h1
+                            className="text-6xl md:text-8xl font-black mb-6 leading-[1.1] tracking-tight"
                             style={{
-                                border: "1px solid rgba(255,255,255,0.15)",
-                                color: "rgba(255,255,255,0.8)",
+                                background: "linear-gradient(135deg, #ffffff 0%, #06b6d4 50%, #a78bfa 100%)",
+                                WebkitBackgroundClip: "text",
+                                WebkitTextFillColor: "transparent",
+                                filter: "drop-shadow(0 0 40px rgba(6, 182, 212, 0.3))",
+                                textShadow: "0 0 20px rgba(0,0,0,0.4)",
                             }}
                         >
-                            See How It Works →
-                        </Link>
-                    </div>
+                            Multi-Agent
+                            <br />
+                            Autonomous Loop
+                        </h1>
 
-                    {/* Stats */}
-                    <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
-                        {siteConfig.stats.map((stat) => (
-                            <div key={stat.label} className="text-center">
-                                <p
-                                    className="text-3xl md:text-4xl font-black"
-                                    style={{
-                                        background: "linear-gradient(135deg, #06b6d4, #f472b6)",
-                                        WebkitBackgroundClip: "text",
-                                        WebkitTextFillColor: "transparent",
-                                    }}
-                                >
-                                    {stat.value}
-                                </p>
-                                <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                    {stat.label}
-                                </p>
-                            </div>
-                        ))}
+                        <p
+                            className="text-lg md:text-2xl max-w-2xl mb-12 leading-relaxed"
+                            style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}
+                        >
+                            {siteConfig.description}
+                            <span className="block mt-4 text-cyan-400 font-semibold">Watch the neural connections react in real-time as tasks propagate.</span>
+                        </p>
+
+                        {/* CTA Buttons */}
+                        <div className="flex flex-col sm:flex-row items-center gap-6 mb-20 justify-center">
+                            <Link
+                                href="/login"
+                                className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-bold text-white transition-all hover:scale-105 active:scale-95 text-center shadow-[0_0_40px_rgba(6,182,212,0.4)]"
+                                style={{
+                                    background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+                                }}
+                            >
+                                Login to Interface
+                            </Link>
+                            <Link
+                                href="#features"
+                                className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-medium transition-all hover:bg-white/5 text-center backdrop-blur-md"
+                                style={{
+                                    border: "1px solid rgba(255,255,255,0.15)",
+                                    color: "rgba(255,255,255,0.8)",
+                                }}
+                            >
+                                Neural Specs →
+                            </Link>
+                        </div>
+
+                        {/* Stats - Centered Grid */}
+                        <div className="flex flex-wrap items-center justify-center gap-12 md:gap-20">
+                            {siteConfig.stats.map((stat) => (
+                                <div key={stat.label} className="text-center group">
+                                    <p
+                                        className="text-4xl md:text-5xl font-black transition-transform group-hover:scale-110"
+                                        style={{
+                                            background: "linear-gradient(135deg, #06b6d4, #f472b6)",
+                                            WebkitBackgroundClip: "text",
+                                            WebkitTextFillColor: "transparent",
+                                        }}
+                                    >
+                                        {stat.value}
+                                    </p>
+                                    <p className="text-xs md:text-sm mt-2 uppercase tracking-widest font-bold" style={{ color: "rgba(255,255,255,0.5)" }}>
+                                        {stat.label}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </section>

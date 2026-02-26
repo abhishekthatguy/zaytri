@@ -99,7 +99,7 @@ export default function SignupPage() {
     const handleSocialLogin = async (provider: string) => {
         try {
             const { getOAuthURL } = await import("@/lib/auth");
-            const redirectUri = `${window.location.origin}/verify?provider=${provider}`;
+            const redirectUri = `${window.location.origin}/auth/callback`;
             const data = await getOAuthURL(provider, redirectUri);
             window.location.href = data.url;
         } catch {

@@ -776,6 +776,17 @@ async def create_knowledge_source(
     user: User = Depends(get_current_user),
 ):
     """Add a new knowledge source and trigger re-indexing."""
+    # Verify brand ownership if brand_id is provided
+    if request.brand_id:
+        brand_result = await db.execute(
+            select(BrandSettings).where(
+                BrandSettings.id == request.brand_id,
+                BrandSettings.user_id == user.id,
+            )
+        )
+        if not brand_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Brand not found")
+
     source = KnowledgeSource(
         user_id=user.id,
         brand_id=request.brand_id,
@@ -817,6 +828,18 @@ async def update_knowledge_source(
         raise HTTPException(status_code=404, detail="Knowledge source not found")
 
     old_brand_id = str(source.brand_id) if source.brand_id else None
+    
+    # Verify brand ownership if brand_id is provided
+    if request.brand_id:
+        brand_result = await db.execute(
+            select(BrandSettings).where(
+                BrandSettings.id == request.brand_id,
+                BrandSettings.user_id == user.id,
+            )
+        )
+        if not brand_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Brand not found")
+            
     source.brand_id = request.brand_id
     source.source_type = request.source_type
     source.name = request.name

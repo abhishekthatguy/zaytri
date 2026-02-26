@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import get_current_user
 from auth.models import User
 from db.database import get_db
-from db.models import AnalyticsRecord
+from db.models import AnalyticsRecord, Content
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -52,7 +52,11 @@ async def get_analytics_report(
 
     result = await db.execute(
         select(AnalyticsRecord)
-        .where(AnalyticsRecord.fetched_at >= since)
+        .join(Content, AnalyticsRecord.content_id == Content.id)
+        .where(
+            Content.created_by == user.id,
+            AnalyticsRecord.fetched_at >= since
+        )
         .order_by(desc(AnalyticsRecord.fetched_at))
     )
     records = result.scalars().all()
@@ -89,7 +93,9 @@ async def get_platform_analytics(
 
     result = await db.execute(
         select(AnalyticsRecord)
+        .join(Content, AnalyticsRecord.content_id == Content.id)
         .where(
+            Content.created_by == user.id,
             AnalyticsRecord.platform == platform,
             AnalyticsRecord.fetched_at >= since,
         )

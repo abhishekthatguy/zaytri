@@ -291,7 +291,19 @@ async def update_connection(
             conn.brand_id = None
         else:
             try:
-                conn.brand_id = UUID(request.brand_id)
+                brand_uuid = UUID(request.brand_id)
+                # Verify brand ownership
+                from db.settings_models import BrandSettings
+                brand_result = await db.execute(
+                    select(BrandSettings).where(
+                        BrandSettings.id == brand_uuid,
+                        BrandSettings.user_id == user.id,
+                    )
+                )
+                if not brand_result.scalar_one_or_none():
+                    raise HTTPException(status_code=404, detail="Brand not found")
+                
+                conn.brand_id = brand_uuid
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid brand ID")
 

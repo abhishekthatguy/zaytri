@@ -80,7 +80,10 @@ async def send_chat_message(
     if req.conversation_id and is_authenticated:
         result = await db.execute(
             select(ChatMessage)
-            .where(ChatMessage.conversation_id == conv_id)
+            .where(
+                ChatMessage.conversation_id == conv_id,
+                ChatMessage.user_id == user_id,
+            )
             .order_by(ChatMessage.created_at.asc())
         )
         messages = result.scalars().all()
