@@ -120,7 +120,7 @@ function Footer() {
     return (
         <footer
             style={{
-                background: "linear-gradient(180deg, #0a0a12 0%, #050508 100%)",
+                background: "#0a0a12",
                 borderTop: "1px solid rgba(255,255,255,0.06)",
             }}
         >
@@ -231,9 +231,8 @@ function Footer() {
     );
 }
 
-// ─── Main Landing Page ─────────────────────────────────────────────────────
-
 import dynamic from "next/dynamic";
+import RevealSection from "@/components/RevealSection";
 
 const AgentNetwork = dynamic(() => import("@/components/AgentNetwork"), {
     ssr: false,
@@ -242,7 +241,20 @@ const AgentNetwork = dynamic(() => import("@/components/AgentNetwork"), {
 
 const MeetTheTeam3D = dynamic(() => import("@/components/MeetTheTeam3D"), {
     ssr: false,
-    loading: () => <div className="h-[600px] w-full flex items-center justify-center text-white/20">Initializing 3D Neural Space...</div>
+    loading: () => (
+        <div className="h-[600px] w-full flex items-center justify-center text-white/20 uppercase tracking-[0.2em] font-black animate-pulse">
+            Initializing 3D Neural Space...
+        </div>
+    )
+});
+
+const Architecture3D = dynamic(() => import("@/components/Architecture3D"), {
+    ssr: false,
+    loading: () => (
+        <div className="w-full h-[600px] flex items-center justify-center text-white/20 uppercase tracking-[0.4em] text-xs font-bold bg-white/5 rounded-3xl animate-pulse">
+            Constructing Neural Architecture...
+        </div>
+    ),
 });
 
 export default function LandingPage() {
@@ -280,194 +292,189 @@ export default function LandingPage() {
                 </div>
 
                 <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 w-full text-center">
-                    <div className="flex flex-col items-center">
-                        {/* Badge */}
-                        <div
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium mb-8"
-                            style={{
-                                background: "rgba(6, 182, 212, 0.15)",
-                                border: "1px solid rgba(6, 182, 212, 0.25)",
-                                color: "#22d3ee",
-                                backdropFilter: "blur(8px)",
-                            }}
-                        >
-                            <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                            Decentralized Intelligent Node Network
-                        </div>
-
-                        <h1
-                            className="text-6xl md:text-8xl font-black mb-6 leading-[1.1] tracking-tight"
-                            style={{
-                                background: "linear-gradient(135deg, #ffffff 0%, #06b6d4 50%, #a78bfa 100%)",
-                                WebkitBackgroundClip: "text",
-                                WebkitTextFillColor: "transparent",
-                                filter: "drop-shadow(0 0 40px rgba(6, 182, 212, 0.3))",
-                                textShadow: "0 0 20px rgba(0,0,0,0.4)",
-                            }}
-                        >
-                            Multi-Agent
-                            <br />
-                            Autonomous Loop
-                        </h1>
-
-                        <p
-                            className="text-lg md:text-2xl max-w-2xl mb-12 leading-relaxed"
-                            style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}
-                        >
-                            {siteConfig.description}
-                            <span className="block mt-4 text-cyan-400 font-semibold">Watch the neural connections react in real-time as tasks propagate.</span>
-                        </p>
-
-                        {/* CTA Buttons */}
-                        <div className="flex flex-col sm:flex-row items-center gap-6 mb-20 justify-center">
-                            <Link
-                                href="/login"
-                                className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-bold text-white transition-all hover:scale-105 active:scale-95 text-center shadow-[0_0_40px_rgba(6,182,212,0.4)]"
+                    <RevealSection direction="up" delay={200}>
+                        <div className="flex flex-col items-center">
+                            {/* Badge */}
+                            <div
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium mb-8"
                                 style={{
-                                    background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+                                    background: "rgba(6, 182, 212, 0.15)",
+                                    border: "1px solid rgba(6, 182, 212, 0.25)",
+                                    color: "#22d3ee",
+                                    backdropFilter: "blur(8px)",
                                 }}
                             >
-                                Login to Interface
-                            </Link>
-                            <Link
-                                href="#features"
-                                className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-medium transition-all hover:bg-white/5 text-center backdrop-blur-md"
+                                <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                                Decentralized Intelligent Node Network
+                            </div>
+
+                            <h1
+                                className="text-6xl md:text-8xl font-black mb-6 leading-[1.1] tracking-tight"
                                 style={{
-                                    border: "1px solid rgba(255,255,255,0.15)",
-                                    color: "rgba(255,255,255,0.8)",
+                                    background: "linear-gradient(135deg, #ffffff 0%, #06b6d4 50%, #a78bfa 100%)",
+                                    WebkitBackgroundClip: "text",
+                                    WebkitTextFillColor: "transparent",
+                                    filter: "drop-shadow(0 0 40px rgba(6, 182, 212, 0.3))",
+                                    textShadow: "0 0 20px rgba(0,0,0,0.4)",
                                 }}
                             >
-                                Neural Specs →
-                            </Link>
-                        </div>
+                                Multi-Agent
+                                <br />
+                                Autonomous Loop
+                            </h1>
 
-                        {/* Stats - Centered Grid */}
-                        <div className="flex flex-wrap items-center justify-center gap-12 md:gap-20">
-                            {siteConfig.stats.map((stat) => (
-                                <div key={stat.label} className="text-center group">
-                                    <p
-                                        className="text-4xl md:text-5xl font-black transition-transform group-hover:scale-110"
-                                        style={{
-                                            background: "linear-gradient(135deg, #06b6d4, #f472b6)",
-                                            WebkitBackgroundClip: "text",
-                                            WebkitTextFillColor: "transparent",
-                                        }}
-                                    >
-                                        {stat.value}
-                                    </p>
-                                    <p className="text-xs md:text-sm mt-2 uppercase tracking-widest font-bold" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                        {stat.label}
-                                    </p>
-                                </div>
-                            ))}
+                            <p
+                                className="text-lg md:text-2xl max-w-2xl mb-12 leading-relaxed"
+                                style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}
+                            >
+                                {siteConfig.description}
+                                <span className="block mt-4 text-cyan-400 font-semibold text-lg md:text-xl">
+                                    Watch the neural connections react in real-time as tasks propagate.
+                                </span>
+                            </p>
+
+                            {/* CTA Buttons */}
+                            <div className="flex flex-col sm:flex-row items-center gap-6 mb-20 justify-center">
+                                <Link
+                                    href="/login"
+                                    className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-bold text-white transition-all hover:scale-105 active:scale-95 text-center shadow-[0_0_40px_rgba(6,182,212,0.4)]"
+                                    style={{
+                                        background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+                                    }}
+                                >
+                                    Login to Interface
+                                </Link>
+                                <Link
+                                    href="#features"
+                                    className="w-full sm:w-auto px-10 py-5 rounded-2xl text-lg font-medium transition-all hover:bg-white/5 text-center backdrop-blur-md"
+                                    style={{
+                                        border: "1px solid rgba(255,255,255,0.15)",
+                                        color: "rgba(255,255,255,0.8)",
+                                    }}
+                                >
+                                    Neural Specs →
+                                </Link>
+                            </div>
+
+                            {/* Stats - Centered Grid */}
+                            <div className="flex flex-wrap items-center justify-center gap-12 md:gap-20">
+                                {siteConfig.stats.map((stat) => (
+                                    <div key={stat.label} className="text-center group">
+                                        <p
+                                            className="text-4xl md:text-5xl font-black transition-transform group-hover:scale-110"
+                                            style={{
+                                                background: "linear-gradient(135deg, #06b6d4, #f472b6)",
+                                                WebkitBackgroundClip: "text",
+                                                WebkitTextFillColor: "transparent",
+                                            }}
+                                        >
+                                            {stat.value}
+                                        </p>
+                                        <p className="text-xs md:text-sm mt-2 uppercase tracking-widest font-bold" style={{ color: "rgba(255,255,255,0.5)" }}>
+                                            {stat.label}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    </RevealSection>
                 </div>
             </section>
 
             {/* ═══ Agents Showcase ═══ */}
-            <section className="py-24 relative overflow-hidden" style={{ background: "rgba(255,255,255,0.01)" }}>
+            <section className="py-12 relative overflow-hidden">
                 <div className="max-w-7xl mx-auto px-6 relative z-10">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-5xl font-black mb-4">
-                            Meet Your <span style={{ color: "#06b6d4" }}>AI Team</span>
-                        </h2>
-                        <p className="text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-                            7 specialized agents work together in a synchronized 3D autonomous pipeline.
-                            Hover or click to explore each node.
-                        </p>
-                    </div>
+                    <RevealSection direction="up">
+                        <div className="text-center mb-8">
+                            <h2 className="text-3xl md:text-5xl font-black mb-4">
+                                Meet Your <span style={{ color: "#06b6d4" }}>AI Team</span>
+                            </h2>
+                            <p className="text-lg max-w-2xl mx-auto font-medium" style={{ color: "rgba(255,255,255,0.5)" }}>
+                                7 specialized agents work together in a synchronized 3D autonomous planetary orbit.
+                                Interact with each node to explore their function.
+                            </p>
+                        </div>
+                    </RevealSection>
 
-                    <MeetTheTeam3D />
-
-                    {/* Pipeline Flow */}
+                    <RevealSection direction="none" delay={300}>
+                        <MeetTheTeam3D />
+                    </RevealSection>
                 </div>
             </section>
 
+            {/* ═══ Architecture Section ═══ */}
+            <section id="features" className="py-12 relative overflow-hidden min-h-screen flex flex-col justify-center">
+                {/* Background Atmosphere */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.05)_0%,transparent_70%)] pointer-events-none" />
 
-            {/* ═══ Features Section ═══ */}
-            <section id="features" className="py-24">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-4xl font-black mb-4">
-                            Explore the <span style={{ color: "#06b6d4" }}>Architecture</span> Under the Hood
-                        </h2>
-                        <p className="text-lg max-w-xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-                            Learn how complex multi-agent AI pipelines function in real-time
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {siteConfig.features.map((feature, i) => (
-                            <div
-                                key={feature.title}
-                                className="group rounded-2xl p-6 transition-all duration-300 hover:-translate-y-2"
-                                style={{
-                                    background: "rgba(255,255,255,0.02)",
-                                    border: "1px solid rgba(255,255,255,0.06)",
-                                }}
-                            >
-                                <div
-                                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-5 transition-transform group-hover:scale-110"
-                                    style={{
-                                        background: `hsl(${i * 45}, 70%, 50%, 0.1)`,
-                                        border: `1px solid hsl(${i * 45}, 70%, 50%, 0.15)`,
-                                    }}
-                                >
-                                    {feature.icon}
-                                </div>
-                                <h3 className="text-base font-bold text-white mb-2">{feature.title}</h3>
-                                <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                    {feature.description}
-                                </p>
+                <div className="relative z-10">
+                    <RevealSection direction="up">
+                        <div className="max-w-7xl mx-auto px-6 text-center mb-8">
+                            <div className="inline-block bg-cyan-400/10 border border-cyan-400/20 px-4 py-1.5 rounded-full mb-6 backdrop-blur-md">
+                                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em]">
+                                    System Blueprint
+                                </span>
                             </div>
-                        ))}
-                    </div>
+                            <h2 className="text-4xl md:text-6xl font-black mb-6 tracking-tight">
+                                The <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Architecture</span>
+                            </h2>
+                            <p className="text-xl max-w-2xl mx-auto font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>
+                                A high-fidelity visualization of the multi-agent orchestration engine powering Zaytri's autonomous pipelines.
+                            </p>
+                        </div>
+                    </RevealSection>
+
+                    <RevealSection direction="none" delay={400}>
+                        <div className="w-full h-[550px]">
+                            <Architecture3D />
+                        </div>
+                    </RevealSection>
                 </div>
             </section>
-
-            {/* ═══ Pricing Section Hidden for Demo ═══ */}
 
             {/* ═══ Testimonials ═══ */}
-            <section className="py-24">
+            <section className="py-12">
                 <div className="max-w-7xl mx-auto px-6">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-4xl font-black mb-4">
-                            Trusted by <span style={{ color: "#06b6d4" }}>Creators</span>
-                        </h2>
-                    </div>
+                    <RevealSection direction="up">
+                        <div className="text-center mb-8">
+                            <h2 className="text-3xl md:text-4xl font-black mb-4">
+                                Trusted by <span style={{ color: "#06b6d4" }}>Creators</span>
+                            </h2>
+                        </div>
+                    </RevealSection>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-                        {siteConfig.testimonials.map((t) => (
-                            <div
-                                key={t.name}
-                                className="rounded-2xl p-6"
-                                style={{
-                                    background: "rgba(255,255,255,0.02)",
-                                    border: "1px solid rgba(255,255,255,0.06)",
-                                }}
-                            >
-                                <p className="text-sm leading-relaxed mb-6" style={{ color: "rgba(255,255,255,0.7)" }}>
-                                    &ldquo;{t.quote}&rdquo;
-                                </p>
-                                <div className="flex items-center gap-3">
-                                    <div
-                                        className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold"
-                                        style={{
-                                            background: "linear-gradient(135deg, #06b6d4, #155e75)",
-                                            color: "white",
-                                        }}
-                                    >
-                                        {t.avatar}
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-white">{t.name}</p>
-                                        <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
-                                            {t.role}
-                                        </p>
+                        {siteConfig.testimonials.map((t, i) => (
+                            <RevealSection key={t.name} direction="up" delay={i * 100}>
+                                <div
+                                    className="rounded-2xl p-6 transition-all hover:bg-white/[0.04]"
+                                    style={{
+                                        background: "rgba(255,255,255,0.02)",
+                                        border: "1px solid rgba(255,255,255,0.06)",
+                                    }}
+                                >
+                                    <p className="text-sm leading-relaxed mb-6" style={{ color: "rgba(255,255,255,0.7)" }}>
+                                        &ldquo;{t.quote}&rdquo;
+                                    </p>
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold"
+                                            style={{
+                                                background: "linear-gradient(135deg, #06b6d4, #155e75)",
+                                                color: "white",
+                                            }}
+                                        >
+                                            {t.avatar}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-white">{t.name}</p>
+                                            <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+                                                {t.role}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </RevealSection>
                         ))}
                     </div>
                 </div>
@@ -475,31 +482,32 @@ export default function LandingPage() {
 
             {/* ═══ CTA Section ═══ */}
             <section className="py-24">
-                <div
-                    className="max-w-4xl mx-auto px-6 py-16 rounded-3xl text-center"
-                    style={{
-                        background:
-                            "linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%)",
-                        border: "1px solid rgba(6, 182, 212, 0.2)",
-                    }}
-                >
-                    <h2 className="text-3xl md:text-4xl font-black mb-4 text-white">
-                        Ready to Explore the Code?
-                    </h2>
-                    <p className="text-lg mb-8" style={{ color: "rgba(255,255,255,0.6)" }}>
-                        Dive into the mechanics of multi-agent LLM systems and build your own.
-                    </p>
-                    <Link
-                        href="/dashboard"
-                        className="inline-block px-10 py-4 rounded-2xl text-base font-bold text-white transition-all hover:scale-105"
+                <RevealSection direction="up" delay={200}>
+                    <div
+                        className="max-w-4xl mx-auto px-6 py-16 rounded-3xl text-center shadow-2xl"
                         style={{
-                            background: "linear-gradient(135deg, #06b6d4, #0891b2)",
-                            boxShadow: "0 8px 30px rgba(6, 182, 212, 0.4)",
+                            background:
+                                "linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)",
+                            border: "1px solid rgba(6, 182, 212, 0.2)",
                         }}
                     >
-                        Launch Dashboard →
-                    </Link>
-                </div>
+                        <h2 className="text-3xl md:text-4xl font-black mb-4 text-white">
+                            Ready to Explore the Code?
+                        </h2>
+                        <p className="text-lg mb-10" style={{ color: "rgba(255,255,255,0.5)" }}>
+                            Dive into the mechanics of multi-agent LLM systems and build your own.
+                        </p>
+                        <Link
+                            href="/login"
+                            className="inline-block px-12 py-5 rounded-2xl text-lg font-bold text-white transition-all hover:scale-105 shadow-[0_10px_40px_rgba(6,182,212,0.4)]"
+                            style={{
+                                background: "linear-gradient(135deg, #06b6d4, #0891b2)",
+                            }}
+                        >
+                            Launch Dashboard →
+                        </Link>
+                    </div>
+                </RevealSection>
             </section>
 
             <Footer />

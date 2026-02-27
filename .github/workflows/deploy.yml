@@ -1,0 +1,32 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main  # Adjust if your production branch is different
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Google Auth
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Prepare .env.production
+      run: |
+        echo "${{ secrets.ENV_PRODUCTION }}" > .env.production
+
+    - name: Deploy to GCE
+      run: |
+        chmod +x scripts/deploy-prod.sh
+        ./scripts/deploy-prod.sh deploy
