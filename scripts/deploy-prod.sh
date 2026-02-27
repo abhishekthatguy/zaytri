@@ -14,8 +14,8 @@ ENV_FILE=".env.production"
 
 # ─── GCE Configuration ─────────────────────────────────────────────────
 GCP_PROJECT="zaytri-test-app"
-GCP_ZONE="northamerica-northeast2-b"
-GCP_VM="zaytri-prod-test"
+GCP_ZONE="us-central1-c"
+GCP_VM="instance-20260227-180710"
 GCP_USER="clawtbot"
 REMOTE_DIR="/home/clawtbot/projects/zaytri"
 DOMAIN="zaytri.abhishekthatguy.in"
