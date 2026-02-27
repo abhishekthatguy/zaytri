@@ -71,6 +71,9 @@ jobs:
           JWT_SECRET_KEY: ci-test-secret-key-not-for-production
           APP_ENV: testing
           APP_DEBUG: false
+          DEFAULT_ADMIN_EMAIL: ${{ secrets.TEST_ADMIN_EMAIL || 'test@example.com' }}
+          DEFAULT_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME || 'testadmin' }}
+          DEFAULT_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD || 'testpassword123' }}
           OLLAMA_HOST: http://localhost:11434
         run: |
           pytest tests/ -v --tb=short --cov=. --cov-report=xml
@@ -196,62 +199,32 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔑 Set up SSH
-        uses: webfactory/ssh-agent@v0.9.0
+      - name: 🔑 Google Auth
+        uses: google-github-actions/auth@v2
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: 🚀 Deploy to server
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '~/projects/zaytri' }}
+      - name: ☁️ Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 📝 Prepare .env.production
         run: |
-          # Add server to known hosts
-          ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          echo "${{ secrets.ENV_PRODUCTION }}" > .env.production
 
-          # Copy updated compose and nginx files
-          scp docker-compose.prod.yml $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/
-          scp -r nginx/ $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/
-          scp scripts/entrypoint.sh $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/scripts/
-          scp scripts/deploy-prod.sh $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/scripts/
-
-          # Deploy on remote server
-          ssh $SERVER_USER@$SERVER_HOST << DEPLOY_SCRIPT
-            cd $DEPLOY_PATH
-
-            echo "═══════════════════════════════════════════════════════════"
-            echo "  Zaytri — Production Deployment"
-            echo "═══════════════════════════════════════════════════════════"
-
-            # Pull latest code
-            git pull origin main
-
-            # Build and start
-            docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-
-            # Clean up old images
-            echo "🧹 Cleaning up dangling images..."
-            docker image prune -f
-
-            # Show status
-            echo "📊 Service status:"
-            docker compose -f docker-compose.prod.yml --env-file .env.production ps
-
-            echo "✅ Deployment complete!"
-          DEPLOY_SCRIPT
+      - name: 🚀 Deploy to GCE
+        run: |
+          chmod +x scripts/deploy-prod.sh
+          ./scripts/deploy-prod.sh deploy
 
       - name: 🏥 Health check
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           echo "⏳ Waiting 30s for services to start..."
           sleep 30
           echo "🏥 Running health check..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$SERVER_HOST/health || echo "000")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://zaytri.abhishekthatguy.in/api/health || echo "000")
           if [ "$HTTP_STATUS" = "200" ]; then
             echo "✅ Health check passed (HTTP $HTTP_STATUS)"
           else
-            echo "⚠️  Health check returned HTTP $HTTP_STATUS — check server logs"
+            echo "⚠️  Health check returned HTTP $HTTP_STATUS"
             exit 1
           fi
