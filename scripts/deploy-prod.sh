@@ -18,7 +18,7 @@ GCP_ZONE="us-central1-c"
 GCP_VM="instance-20260227-180710"
 GCP_USER="clawtbot"
 REMOTE_DIR="/home/clawtbot/projects/zaytri"
-DOMAIN="zaytri.abhishekthatguy.in"
+DOMAIN="zaytri.gitlime.com"
 
 # Colors
 RED='\033[0;31m'
