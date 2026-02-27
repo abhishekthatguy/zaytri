@@ -8,17 +8,24 @@
 
 set -e
 
-PROJECT_NAME="zaytri"
+PROJECT_NAME="${PROJECT_NAME:-zaytri}"
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.production"
 
-# ─── GCE Configuration ─────────────────────────────────────────────────
-GCP_PROJECT="zaytri-test-app"
-GCP_ZONE="us-central1-c"
-GCP_VM="instance-20260227-180710"
-GCP_USER="clawtbot"
-REMOTE_DIR="/home/clawtbot/projects/zaytri"
-DOMAIN="zaytri.gitlime.com"
+# ─── Load Environment Variables ────────────────────────────────────────
+# Load from .env.production if it exists to avoid hardcoding secrets
+if [ -f "$ENV_FILE" ]; then
+    # Use grep to ignore comments and empty lines, then export
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+fi
+
+# ─── GCE Configuration (can be overridden by Env Vars) ─────────────────
+GCP_PROJECT="${GCP_PROJECT:-your-project-id}"
+GCP_ZONE="${GCP_ZONE:-us-central1-c}"
+GCP_VM="${GCP_VM:-your-vm-name}"
+GCP_USER="${GCP_USER:-clawtbot}"
+REMOTE_DIR="${REMOTE_DIR:-/home/${GCP_USER}/projects/${PROJECT_NAME}}"
+DOMAIN="${DOMAIN:-example.com}"
 
 # Colors
 RED='\033[0;31m'
@@ -74,6 +81,9 @@ do_upload() {
         --exclude='.gemini' \
         --exclude='.agents' \
         --exclude='.env' \
+        --exclude='.env.local' \
+        --exclude='.env.development' \
+        --exclude='.env.test' \
         -C "$(dirname "$LOCAL_DIR")" "$(basename "$LOCAL_DIR")"
 
     local SIZE=$(ls -lh /tmp/zaytri-deploy.tar.gz | awk '{print $5}')

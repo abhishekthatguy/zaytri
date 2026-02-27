@@ -6,8 +6,8 @@
 # =============================================================================
 set -e
 
-DOMAIN="zaytri.abhishekthatguy.in"
-EMAIL="clawtbot@gmail.com"
+DOMAIN="zaytri.gitlime.com"
+EMAIL="[EMAIL_ADDRESS]"
 PROJECT_DIR="/home/clawtbot/projects/zaytri"
 
 echo "══════════════════════════════════════════════════════════════"

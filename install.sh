@@ -20,7 +20,7 @@ REPO_URL="https://github.com/abhishekthatguy/zaytri.git"
 INSTALL_DIR="${HOME}/projects/zaytri"
 MODE="auto"   # auto | docker | production | local
 BRANCH="main"
-DOMAIN="zaytri.abhishekthatguy.in"
+DOMAIN="zaytri.gitlime.com"
 
 # Colors
 RED='\033[0;31m'

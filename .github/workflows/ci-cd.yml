@@ -221,7 +221,8 @@ jobs:
           echo "⏳ Waiting 30s for services to start..."
           sleep 30
           echo "🏥 Running health check..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://zaytri.gitlime.com/api/health || echo "000")
+          DOMAIN=$(grep DOMAIN .env.production | cut -d'=' -f2)
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://$DOMAIN/api/health || echo "000")
           if [ "$HTTP_STATUS" = "200" ]; then
             echo "✅ Health check passed (HTTP $HTTP_STATUS)"
           else

@@ -1,6 +1,6 @@
 # 🚀 Deploying Zaytri on Google Cloud (Minimal Cost Guide)
 
-This guide walks you through deploying your full Next.js/FastAPI stack via Docker on Google Cloud Compute Engine (GCE), with your domain (`zaytri.abhishekthatguy.in`) and SSL (HTTPS) enabled.
+This guide walks you through deploying your full Next.js/FastAPI stack via Docker on Google Cloud Compute Engine (GCE), with your domain (`zaytri.gitlime.com`) and SSL (HTTPS) enabled.
 
 ## 💰 Choosing a Server for "Minimal Cost"
 Docker, PostgreSQL, Redis, Celery, and Next.js require memory to run smoothly. 
@@ -38,7 +38,7 @@ Furthermore, you are using **Ollama (Local LLM)**. An LLM alone requires **at le
 4. Note down the **External IP**.
 5. Log into your Domains registrar (GoDaddy, Namecheap, Cloudflare, etc.).
 6. Create an **A-Record**:
-    *   **Name/Host**: `zaytri` (or depending on the provider, `zaytri.abhishekthatguy.in`)
+    *   **Name/Host**: `zaytri` (or depending on the provider, `zaytri.gitlime.com`)
     *   **Value/Points to**: Your GCP External IP.
     *   **TTL**: Auto / 1 hour.
 
@@ -62,7 +62,7 @@ sudo usermod -aG docker $USER
 ### Install Certbot for Free HTTPS / SSL:
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d zaytri.abhishekthatguy.in --non-interactive --agree-tos -m clawtbot@gmail.com
+sudo certbot certonly --standalone -d zaytri.gitlime.com --non-interactive --agree-tos -m clawtbot@gmail.com
 ```
 
 ---
@@ -85,8 +85,8 @@ nano .env.production
 3. Our backend API and frontend proxy will securely route internally. The reverse proxy needs to see the newly generated certificates:
 ```bash
 # Link the Certbot SSL directory onto the Nginx configuration path!
-sudo ln -s /etc/letsencrypt/live/zaytri.abhishekthatguy.in/fullchain.pem ./nginx/ssl/fullchain.pem
-sudo ln -s /etc/letsencrypt/live/zaytri.abhishekthatguy.in/privkey.pem ./nginx/ssl/privkey.pem
+sudo ln -s /etc/letsencrypt/live/zaytri.gitlime.com/fullchain.pem ./nginx/ssl/fullchain.pem
+sudo ln -s /etc/letsencrypt/live/zaytri.gitlime.com/privkey.pem ./nginx/ssl/privkey.pem
 ```
 
 4. Bring it all online!
