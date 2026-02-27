@@ -86,7 +86,7 @@ function ToastNotification({
     const [progress, setProgress] = useState(100);
     const duration = toast.duration || 4000;
     const timerRef = useRef<NodeJS.Timeout | null>(null);
-    const startRef = useRef(Date.now());
+    const startRef = useRef(0);
 
     const config = TOAST_CONFIG[toast.type];
     const displayIcon = toast.icon || config.icon;

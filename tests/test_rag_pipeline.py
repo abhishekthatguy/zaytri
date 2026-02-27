@@ -232,6 +232,8 @@ class TestRetrieval:
             MagicMock(scalar=MagicMock(return_value=0)),
             # knowledge sources
             MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[ks])))),
+            # document chunks (from embeddings table fallback)
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         mock_session.execute = AsyncMock(side_effect=mock_results)
 
@@ -256,6 +258,8 @@ class TestRetrieval:
         mock_results = [
             MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=brand)))),
             MagicMock(scalar=MagicMock(return_value=0)),
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
+            # document chunks (from embeddings table fallback)
             MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         mock_session.execute = AsyncMock(side_effect=mock_results)
@@ -286,6 +290,7 @@ class TestContextBuilding:
             MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=brand)))),
             MagicMock(scalar=MagicMock(return_value=0)),
             MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[ks])))),
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         mock_session.execute = AsyncMock(side_effect=mock_results)
 
@@ -308,6 +313,7 @@ class TestContextBuilding:
         mock_results = [
             MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=brand)))),
             MagicMock(scalar=MagicMock(return_value=0)),
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
             MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         mock_session.execute = AsyncMock(side_effect=mock_results)
@@ -332,6 +338,7 @@ class TestContextBuilding:
             MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=brand)))),
             MagicMock(scalar=MagicMock(return_value=0)),
             MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[ks])))),
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
         ]
         mock_session.execute = AsyncMock(side_effect=mock_results)
 
@@ -414,7 +421,7 @@ class TestFactory:
     def test_get_rag_engine_defaults(self):
         from brain.rag_engine import get_rag_engine
         engine = get_rag_engine()
-        assert engine.similarity_threshold == 0.6
+        assert engine.similarity_threshold == 0.5
         assert engine.top_k == 5
 
     def test_get_rag_engine_custom(self):

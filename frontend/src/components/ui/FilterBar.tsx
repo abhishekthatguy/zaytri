@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Filter, Search, Grid, List } from "lucide-react";
+import { Search, Grid, List } from "lucide-react";
 
 export interface FilterBarProps {
     brands: string[];

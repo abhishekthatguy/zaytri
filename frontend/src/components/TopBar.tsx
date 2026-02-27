@@ -27,7 +27,6 @@ export default function TopBar() {
         return null;
     }
 
-    const pageInfo = PAGE_TITLES[pathname] || { title: "", subtitle: "" };
 
     const now = new Date();
     const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
