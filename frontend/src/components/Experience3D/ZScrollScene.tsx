@@ -83,7 +83,7 @@ function GlassSection({
             {/* Backdrop dark glow so text is readable over tunnel */}
             <div className="absolute inset-0 bg-black/30 blur-[120px] rounded-[6rem] pointer-events-none" />
 
-            <div className="relative max-w-5xl w-full mx-auto px-6 text-center pointer-events-auto">
+            <div className="relative max-w-[90vw] md:max-w-7xl w-full mx-auto px-6 text-center pointer-events-auto">
                 {/* Checkpoint marker */}
                 {checkpoint && (
                     <div className="mb-10 flex items-center justify-center gap-6">
@@ -97,14 +97,14 @@ function GlassSection({
 
                 {/* Title */}
                 {isHero ? (
-                    <h1 className="text-7xl md:text-9xl font-black mb-6 tracking-tighter uppercase italic">
+                    <h1 className="text-[clamp(2.5rem,13vw,5.5rem)] md:text-[clamp(8rem,13vw,11rem)] font-black mb-8 uppercase italic leading-[0.85] tracking-tight inline-block max-w-[85vw] px-8 overflow-visible">
                         ZAY
                         <span className="text-transparent bg-clip-text bg-gradient-to-b from-white to-cyan-500">
                             TRI
                         </span>
                     </h1>
                 ) : (
-                    <h2 className="text-5xl md:text-8xl font-black mb-6 uppercase italic tracking-tighter">
+                    <h2 className="text-6xl md:text-[clamp(4rem,10vw,8rem)] font-black mb-8 uppercase italic tracking-tight leading-tight">
                         {title}{" "}
                         <span className="text-cyan-400 font-normal">{titleAccent}</span>
                     </h2>

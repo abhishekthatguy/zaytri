@@ -24,10 +24,12 @@ export default function LandingLayout({
                     height: "100vh",
                     overflowY: "scroll",
                     overflowX: "hidden",
-                    background: "#0a0a12",
+                    background: "transparent",
                     zIndex: 50,
                     margin: 0,
                     padding: 0,
+                    scrollBehavior: "smooth",
+                    WebkitOverflowScrolling: "touch",
                 }}
             >
                 {children}

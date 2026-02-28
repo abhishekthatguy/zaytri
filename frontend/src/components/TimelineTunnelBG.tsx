@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
@@ -83,59 +83,32 @@ function DataPulse() {
 }
 
 export default function TimelineTunnelBG() {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [isVisible, setIsVisible] = useState(true);
-
-    // Use IntersectionObserver to detect when the tunnel is scrolled off-screen
-    // This frees the WebGL context for the Agent Showcase below
-    useEffect(() => {
-        if (!containerRef.current) return;
-
-        const scrollRoot = document.getElementById("landing-scroll-root");
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                setIsVisible(entry.isIntersecting);
-            },
-            {
-                root: scrollRoot,
-                threshold: 0,
-                rootMargin: "200px", // Extra margin for smooth transitions
-            }
-        );
-
-        observer.observe(containerRef.current);
-        return () => observer.disconnect();
-    }, []);
-
     return (
         <div
-            ref={containerRef}
-            className="sticky top-0 left-0 w-full h-screen z-0 pointer-events-none bg-[#0a0a12]"
-            style={{ marginBottom: "-100vh" }}
+            className="fixed top-0 left-0 w-full h-screen z-0 pointer-events-none"
+            style={{ background: "#050510" }}
         >
-            {isVisible && (
-                <Canvas
-                    camera={{ position: [0, 0, 5], fov: 75 }}
-                    gl={{
-                        alpha: false,
-                        antialias: false,
-                        powerPreference: "high-performance",
-                        preserveDrawingBuffer: false,
-                    }}
-                    dpr={1}
-                >
-                    <color attach="background" args={["#0a0a12"]} />
-                    <fog attach="fog" args={["#0a0a12", 5, 60]} />
-                    <TunnelStars />
-                    <DataPulse />
-                    <ambientLight intensity={1} />
-                </Canvas>
-            )}
+            <Canvas
+                camera={{ position: [0, 0, 5], fov: 75 }}
+                gl={{
+                    alpha: false,
+                    antialias: false,
+                    powerPreference: "high-performance",
+                    preserveDrawingBuffer: false,
+                }}
+                dpr={1}
+            >
+                <color attach="background" args={["#050510"]} />
+                <fog attach="fog" args={["#050510", 5, 60]} />
+                <TunnelStars />
+                <DataPulse />
+                <ambientLight intensity={1} />
+            </Canvas>
 
-            {/* Visual Overlays for Tunnel Depth */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#0a0a12_90%)]" />
+            {/* Vignette overlay */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#05051080_70%,#050510_100%)]" />
 
-            {/* Horizontal scanline effect */}
+            {/* Scanline effect */}
             <div
                 className="absolute inset-0 opacity-[0.03] pointer-events-none"
                 style={{

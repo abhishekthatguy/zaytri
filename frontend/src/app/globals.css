@@ -41,6 +41,13 @@
 
 html {
   overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+/* Landing page scroll container — smooth + performant */
+#landing-scroll-root {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 body {

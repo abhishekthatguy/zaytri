@@ -5,10 +5,10 @@ import { useState, useEffect, useRef } from "react";
 import { siteConfig } from "@/lib/siteConfig";
 import dynamic from "next/dynamic";
 
-// ─── Timeline Background (Deep Tunnel — unchanged) ────────────────────────
+// ─── Timeline Background (Deep Tunnel — fixed behind everything) ───────────
 const TimelineTunnelBG = dynamic(() => import("@/components/TimelineTunnelBG"), {
     ssr: false,
-    loading: () => <div className="h-screen bg-[#0a0a12]" />,
+    loading: () => <div className="fixed inset-0 bg-[#050510]" />,
 });
 
 // ─── 3D Z-Scroll Content Overlay ──────────────────────────────────────────
@@ -20,7 +20,13 @@ const ZScrollScene = dynamic(() => import("@/components/Experience3D/ZScrollScen
 // ─── Agent Showcase (Keyframe Animation) ──────────────────────────────────
 const AgentShowcase3D = dynamic(() => import("@/components/AgentShowcase3D"), {
     ssr: false,
-    loading: () => <div className="h-[700px] bg-[#0a0a12]" />,
+    loading: () => <div className="h-[750px]" />,
+});
+
+// ─── Parallax CTA Section ─────────────────────────────────────────────────
+const ParallaxCTA = dynamic(() => import("@/components/ParallaxCTA"), {
+    ssr: false,
+    loading: () => <div className="h-screen" />,
 });
 
 // ─── Landing Navbar ────────────────────────────────────────────────────────
@@ -41,8 +47,8 @@ function LandingNav() {
         <nav
             className="sticky top-0 left-0 right-0 z-[100] transition-all duration-300"
             style={{
-                background: scrolled ? "rgba(10, 10, 18, 0.9)" : "transparent",
-                backdropFilter: scrolled ? "blur(12px)" : "none",
+                background: scrolled ? "rgba(5, 5, 16, 0.85)" : "transparent",
+                backdropFilter: scrolled ? "blur(16px)" : "none",
                 borderBottom: scrolled ? "1px solid rgba(255,255,255,0.05)" : "none",
                 position: "sticky",
                 top: 0,
@@ -89,8 +95,8 @@ function LandingNav() {
 
 export default function LandingPage() {
     return (
-        <div className="relative text-white bg-[#0a0a12] selection:bg-cyan-500/30">
-            {/* Layer 0: Deep Tunnel Background (Three.js Canvas — sticky) */}
+        <div className="relative text-white selection:bg-cyan-500/30">
+            {/* Layer 0: Deep Tunnel Background (Three.js Canvas — fixed behind everything) */}
             <TimelineTunnelBG />
 
             {/* Layer 1: Navigation (sticky to scroll container) */}
@@ -101,34 +107,37 @@ export default function LandingPage() {
                 <ZScrollScene />
             </main>
 
-            {/* Layer 3: Agent Showcase — Keyframe Animation Stage */}
+            {/* Layer 3: Agent Showcase — Orbital Intelligence System */}
             <section
                 id="agents"
-                className="relative z-20 bg-[#0a0a12]"
+                className="relative z-20 h-screen flex flex-col overflow-hidden"
             >
-                {/* Section header */}
-                <div className="text-center pt-24 pb-8">
-                    <div className="flex items-center justify-center gap-6 mb-8">
+                {/* Section header — transparent so tunnel shows behind */}
+                <div className="text-center pt-20 pb-4 flex-shrink-0">
+                    <div className="flex items-center justify-center gap-6 mb-4">
                         <div className="h-[1px] w-20 bg-cyan-500/30" />
                         <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.8em] drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
                             Command Center
                         </span>
                         <div className="h-[1px] w-20 bg-cyan-500/30" />
                     </div>
-                    <h2 className="text-5xl md:text-7xl font-black uppercase italic tracking-tighter text-white mb-4">
+                    <h2 className="text-5xl md:text-6xl font-black uppercase italic tracking-tighter text-white mb-2">
                         Meet The <span className="text-cyan-400 font-normal">Agents</span>
                     </h2>
-                    <p className="text-sm text-white/30 font-bold uppercase tracking-[0.3em] max-w-xl mx-auto">
+                    <p className="text-[10px] text-white/30 font-bold uppercase tracking-[0.3em] max-w-xl mx-auto">
                         7 specialized AI agents orbiting the Zaytri Core
                     </p>
                 </div>
 
-                {/* 3D Showcase */}
+                {/* 3D Showcase — this will now fill the remaining screen space */}
                 <AgentShowcase3D />
             </section>
 
-            {/* Layer 4: Footer */}
-            <footer className="relative z-20 py-12 border-t border-white/5 text-center bg-[#0a0a12]">
+            {/* Layer 4: Parallax CTA — Final call to action */}
+            <ParallaxCTA />
+
+            {/* Layer 5: Footer */}
+            <footer className="relative z-20 py-12 border-t border-white/5 text-center">
                 <p className="text-[10px] text-white/10 uppercase tracking-[0.8em]">
                     © {siteConfig.year} Zaytri Protocol
                 </p>
