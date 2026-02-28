@@ -1,34 +1,36 @@
 "use client";
 
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Points, PointMaterial, Float } from "@react-three/drei";
+import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
 
 function TunnelStars() {
     const ref = useRef<THREE.Points>(null);
-    const starCount = 1200;
+    const starCount = 3000;
+    const tunnelLength = 400;
 
-    // Create a long tubular starfield
     const positions = useMemo(() => {
         const pos = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
-            // Radial distribution to form a tunnel
             const angle = Math.random() * Math.PI * 2;
-            const radius = 5 + Math.random() * 20;
+            const radius = 10 + Math.random() * 30;
             pos[i * 3] = Math.cos(angle) * radius;
             pos[i * 3 + 1] = Math.sin(angle) * radius;
-            pos[i * 3 + 2] = (Math.random() - 0.5) * 300; // Deep Z axis
+            pos[i * 3 + 2] = Math.random() * tunnelLength - tunnelLength / 2;
         }
         return pos;
     }, []);
 
     useFrame((state) => {
         if (!ref.current) return;
-        // Connect star movement to clock but allow scroll to accelerate it
-        const scrollOffset = typeof window !== 'undefined' ? window.scrollY * 0.05 : 0;
-        ref.current.position.z = (state.clock.getElapsedTime() * 10 + scrollOffset) % 100;
-        ref.current.rotation.z = state.clock.getElapsedTime() * 0.02;
+        const time = state.clock.getElapsedTime();
+        const scrollRoot = document.getElementById("landing-scroll-root");
+        const scroll = scrollRoot ? scrollRoot.scrollTop : 0;
+        const speed = 15 + (scroll * 0.02);
+        const zOffset = (time * speed) % tunnelLength;
+        ref.current.position.z = zOffset;
+        ref.current.rotation.z = time * 0.05;
     });
 
     return (
@@ -36,11 +38,11 @@ function TunnelStars() {
             <PointMaterial
                 transparent
                 color="#06b6d4"
-                size={0.12}
+                size={0.15}
                 sizeAttenuation={true}
                 depthWrite={false}
                 blending={THREE.AdditiveBlending}
-                opacity={0.6}
+                opacity={0.4}
             />
         </Points>
     );
@@ -48,17 +50,23 @@ function TunnelStars() {
 
 function DataPulse() {
     const ref = useRef<THREE.Group>(null);
-    const rings = 10;
+    const rings = 12;
+    const tunnelLength = 200;
 
     useFrame((state) => {
         if (!ref.current) return;
-        const scroll = typeof window !== 'undefined' ? window.scrollY * 0.1 : 0;
+        const time = state.clock.getElapsedTime();
+        const scrollRoot = document.getElementById("landing-scroll-root");
+        const scroll = scrollRoot ? scrollRoot.scrollTop : 0;
+        const speed = 40 + (scroll * 0.1);
+
         ref.current.children.forEach((child, i) => {
-            const speed = 20 + i * 5;
-            child.position.z = ((state.clock.getElapsedTime() * speed + scroll) % 200) - 130;
-            // Pulse opacity
+            const offset = (i / rings) * tunnelLength;
+            const z = ((time * speed + offset) % tunnelLength) - tunnelLength / 2;
+            child.position.z = z;
             const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-            material.opacity = Math.max(0, 0.1 - Math.abs(child.position.z) / 200);
+            const dist = Math.abs(z);
+            material.opacity = Math.max(0, (1 - dist / (tunnelLength / 2)) * 0.15);
         });
     });
 
@@ -75,33 +83,64 @@ function DataPulse() {
 }
 
 export default function TimelineTunnelBG() {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isVisible, setIsVisible] = useState(true);
+
+    // Use IntersectionObserver to detect when the tunnel is scrolled off-screen
+    // This frees the WebGL context for the Agent Showcase below
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const scrollRoot = document.getElementById("landing-scroll-root");
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                setIsVisible(entry.isIntersecting);
+            },
+            {
+                root: scrollRoot,
+                threshold: 0,
+                rootMargin: "200px", // Extra margin for smooth transitions
+            }
+        );
+
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <div className="fixed inset-0 z-0 pointer-events-none bg-[#0a0a12]">
-            <Canvas
-                camera={{ position: [0, 0, 5], fov: 75 }}
-                gl={{
-                    alpha: false,
-                    antialias: false,
-                    powerPreference: "high-performance",
-                    preserveDrawingBuffer: false
-                }}
-                dpr={1} // Force lower DPR for stability on high-res screens
-            >
-                <color attach="background" args={["#0a0a12"]} />
-                <fog attach="fog" args={["#0a0a12", 5, 60]} />
-                <TunnelStars />
-                <DataPulse />
-                <ambientLight intensity={1} />
-            </Canvas>
+        <div
+            ref={containerRef}
+            className="sticky top-0 left-0 w-full h-screen z-0 pointer-events-none bg-[#0a0a12]"
+            style={{ marginBottom: "-100vh" }}
+        >
+            {isVisible && (
+                <Canvas
+                    camera={{ position: [0, 0, 5], fov: 75 }}
+                    gl={{
+                        alpha: false,
+                        antialias: false,
+                        powerPreference: "high-performance",
+                        preserveDrawingBuffer: false,
+                    }}
+                    dpr={1}
+                >
+                    <color attach="background" args={["#0a0a12"]} />
+                    <fog attach="fog" args={["#0a0a12", 5, 60]} />
+                    <TunnelStars />
+                    <DataPulse />
+                    <ambientLight intensity={1} />
+                </Canvas>
+            )}
 
             {/* Visual Overlays for Tunnel Depth */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#0a0a12_90%)]" />
 
             {/* Horizontal scanline effect */}
-            <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
+            <div
+                className="absolute inset-0 opacity-[0.03] pointer-events-none"
                 style={{
-                    backgroundImage: 'linear-gradient(transparent 50%, #06b6d4 50%)',
-                    backgroundSize: '100% 4px'
+                    backgroundImage: "linear-gradient(transparent 50%, #06b6d4 50%)",
+                    backgroundSize: "100% 4px",
                 }}
             />
         </div>

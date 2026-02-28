@@ -611,7 +611,7 @@ class ActionExecutor:
         if not prompt:
             return {"success": False, "message": "No prompt provided for image generation."}
         
-        from agents.image_generator import ImageGeneratorAgent
+        from .image_generator import ImageGeneratorAgent
         
         # We now use the dedicated sub-agent
         agent = ImageGeneratorAgent(user_id=self.user_id, session=self.session)

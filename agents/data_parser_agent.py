@@ -23,7 +23,7 @@ from enum import Enum
 
 import httpx
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 

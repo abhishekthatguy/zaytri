@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from celery import shared_task
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 

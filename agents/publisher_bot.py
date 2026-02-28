@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from cron_config import ENGAGEMENT_DELAY_HOURS
 
 logger = logging.getLogger(__name__)

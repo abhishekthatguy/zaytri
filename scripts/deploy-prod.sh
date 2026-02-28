@@ -69,7 +69,9 @@ do_upload() {
     local LOCAL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
     echo -e "${GREEN}▸${NC} Creating deployment archive..."
-    COPYFILE_DISABLE=1 tar czf /tmp/zaytri-deploy.tar.gz \
+    # Disable macOS-specific extended attributes to avoid warnings on Linux
+    export COPYFILE_DISABLE=1
+    tar czf /tmp/zaytri-deploy.tar.gz \
         --exclude='.git' \
         --exclude='node_modules' \
         --exclude='.next' \

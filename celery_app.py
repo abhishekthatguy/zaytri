@@ -49,6 +49,12 @@ celery_app.conf.update(
     result_expires=86400,  # 24 hours
 )
 
+# ─── Register Tasks ──────────────────────────────────────────────────────────
+# Explicitly import modules holding tasks to ensuring they are registered
+# before autodiscover or when the worker starts.
+import agents
+import workflow.pipeline
+
 # ─── Auto-discover tasks ────────────────────────────────────────────────────
 celery_app.autodiscover_tasks([
     "agents",

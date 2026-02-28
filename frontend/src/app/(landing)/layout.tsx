@@ -1,6 +1,9 @@
 /**
  * Landing Layout — Full-width, no sidebar, no topbar, no chat widget.
  * Used for public marketing pages: /, /about, /privacy, /terms
+ * 
+ * The layout uses position:fixed to cover the entire viewport and escape
+ * the root layout's sidebar structure. It has its own internal scroll.
  */
 
 export default function LandingLayout({
@@ -9,21 +12,26 @@ export default function LandingLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div
-            style={{
-                marginLeft: 0,
-                paddingLeft: 0,
-                width: "100%",
-                position: "fixed",
-                top: 0,
-                left: 0,
-                overflowY: "auto",
-                overflowX: "hidden",
-                height: "100vh",
-                background: "#0a0a12",
-            }}
-        >
-            {children}
-        </div>
+        <>
+            {/* Full-screen landing container that escapes the sidebar layout */}
+            <div
+                id="landing-scroll-root"
+                style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100vw",
+                    height: "100vh",
+                    overflowY: "scroll",
+                    overflowX: "hidden",
+                    background: "#0a0a12",
+                    zIndex: 50,
+                    margin: 0,
+                    padding: 0,
+                }}
+            >
+                {children}
+            </div>
+        </>
     );
 }

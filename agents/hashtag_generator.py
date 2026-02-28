@@ -4,7 +4,7 @@ Generates niche and broad hashtags for social media posts.
 """
 
 from typing import Any, Dict
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from brain.llm_router import get_llm
 from brain.prompts import HASHTAG_SYSTEM, HASHTAG_PROMPT
 

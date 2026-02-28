@@ -9,7 +9,7 @@ from typing import Any, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from db.settings_models import LLMProviderConfig
 from brain.llm_router import llm_router
 
